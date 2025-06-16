@@ -1,0 +1,29 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "ad0eed26825cfa5592bfb7f05dc18fdc"
+name = "GrowthHit"
+handle = "growthhit"
+application_url = "https://axis-reduce-saved-worldwide.trycloudflare.com"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+dev_store_url = "growthhit-test.myshopify.com"
+include_config_on_deploy = true
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_orders,read_products"
+
+[auth]
+redirect_urls = [
+  "https://axis-reduce-saved-worldwide.trycloudflare.com/auth/callback",
+  "https://axis-reduce-saved-worldwide.trycloudflare.com/auth/shopify/callback",
+  "https://axis-reduce-saved-worldwide.trycloudflare.com/api/auth/callback"
+]
+
+[webhooks]
+api_version = "2024-10"
+
+[pos]
+embedded = false
