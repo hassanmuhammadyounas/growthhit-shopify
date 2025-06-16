@@ -3,7 +3,7 @@
 client_id = "ad0eed26825cfa5592bfb7f05dc18fdc"
 name = "GrowthHit"
 handle = "growthhit"
-application_url = "https://axis-reduce-saved-worldwide.trycloudflare.com"
+application_url = "https://growthhit-shopify-git-main-growth-hit.vercel.app"
 embedded = true
 
 [build]
@@ -17,9 +17,9 @@ scopes = "read_orders,read_products"
 
 [auth]
 redirect_urls = [
-  "https://axis-reduce-saved-worldwide.trycloudflare.com/auth/callback",
-  "https://axis-reduce-saved-worldwide.trycloudflare.com/auth/shopify/callback",
-  "https://axis-reduce-saved-worldwide.trycloudflare.com/api/auth/callback"
+  "https://growthhit-shopify-git-main-growth-hit.vercel.app/auth/callback",
+  "https://growthhit-shopify-git-main-growth-hit.vercel.app/auth/shopify/callback",
+  "https://growthhit-shopify-git-main-growth-hit.vercel.app/api/auth/callback"
 ]
 
 [webhooks]
