@@ -7,6 +7,17 @@ import { addDocumentResponseHeaders } from "./shopify.server";
 
 export const streamTimeout = 5000;
 
+export function handleError(error, { request }) {
+  console.error("Server error:", {
+    url: request.url,
+    error: error.message,
+    stack: error.stack,
+  });
+  
+  // Add Sentry or other monitoring here
+  // Sentry.captureException(error);
+}
+
 export default async function handleRequest(
   request,
   responseStatusCode,

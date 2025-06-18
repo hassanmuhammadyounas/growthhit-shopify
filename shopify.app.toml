@@ -23,7 +23,11 @@ redirect_urls = [
 ]
 
 [webhooks]
-api_version = "2025-04"
+api_version = "2025-01"
+
+[[webhooks.subscriptions]]
+topics = ["app/uninstalled"]
+uri = "https://growthhit-shopify-git-main-growth-hit.vercel.app/webhooks"
 
 [pos]
 embedded = false

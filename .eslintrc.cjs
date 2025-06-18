@@ -2,12 +2,28 @@
 module.exports = {
   root: true,
   extends: [
-    "@remix-run/eslint-config",
-    "@remix-run/eslint-config/node",
-    "@remix-run/eslint-config/jest-testing-library",
+    "eslint:recommended",
     "prettier",
   ],
+  parser: "@typescript-eslint/parser",
+  parserOptions: {
+    ecmaVersion: 2022,
+    sourceType: "module",
+    ecmaFeatures: {
+      jsx: true,
+    },
+  },
+  env: {
+    browser: true,
+    es2022: true,
+    node: true,
+  },
   globals: {
     shopify: "readonly"
+  },
+  rules: {
+    // Add custom rules if needed
+    "no-unused-vars": "warn",
+    "no-console": "off", // Allow console for logging
   },
 };

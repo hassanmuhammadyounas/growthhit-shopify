@@ -3,6 +3,7 @@
 
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 // Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
@@ -11,16 +12,17 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Session {
   id            String    @id
-  shop          String
+  shop          String    @unique // Make shop unique for proper relations
   state         String
   isOnline      Boolean   @default(false)
   scope         String?
   expires       DateTime?
-  accessToken   String
+  accessToken   String    @db.Text // Use Text for larger tokens
   userId        BigInt?
   firstName     String?
   lastName      String?
@@ -29,17 +31,117 @@ model Session {
   locale        String?
   collaborator  Boolean?  @default(false)
   emailVerified Boolean?  @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  airbyteConnection AirbyteConnection?
+  logs              AppLog[]
+  webhookEvents     WebhookEvent[]
+  
+  @@index([shop])
+  @@index([shop, isOnline])
+  @@index([expires])
+  @@map("sessions")
 }
 
 model AirbyteConnection {
   id            String   @id @default(cuid())
   shop          String   @unique
-  status        String   // "connected", "failed", "connecting"
+  status        String   // "connected", "failed", "connecting", "disconnected"
   connectionId  String?
   sourceId      String?
   destinationId String?
   jobId         String?
-  errorMessage  String?
+  errorMessage  String?  @db.Text
+  lastSyncAt    DateTime?
+  syncCount     Int      @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  
+  // Relations
+  session       Session?  @relation(fields: [shop], references: [shop])
+  syncLogs      SyncLog[]
+  
+  @@index([shop])
+  @@index([status])
+  @@index([lastSyncAt])
+  @@map("airbyte_connections")
+}
+
+model AppLog {
+  id            String   @id @default(cuid())
+  shop          String
+  level         String   // "info", "warn", "error", "debug"
+  message       String   @db.Text
+  context       Json?    // Additional context data
+  source        String?  // Which part of the app generated this log
+  userId        String?  // User who triggered the action
+  requestId     String?  // To correlate logs from same request
+  userAgent     String?
+  ipAddress     String?
+  createdAt     DateTime @default(now())
+  
+  // Relations
+  session       Session? @relation(fields: [shop], references: [shop])
+  
+  @@index([shop])
+  @@index([level])
+  @@index([createdAt])
+  @@index([source])
+  @@index([requestId])
+  @@map("app_logs")
+}
+
+model WebhookEvent {
+  id            String   @id @default(cuid())
+  shop          String
+  topic         String   // "APP_UNINSTALLED", "APP_SCOPES_UPDATE", etc.
+  payload       Json?    // Full webhook payload
+  processed     Boolean  @default(false)
+  processingError String? @db.Text
+  receivedAt    DateTime @default(now())
+  processedAt   DateTime?
+  
+  // Relations
+  session       Session? @relation(fields: [shop], references: [shop])
+  
+  @@index([shop])
+  @@index([topic])
+  @@index([processed])
+  @@index([receivedAt])
+  @@map("webhook_events")
+}
+
+model SyncLog {
+  id              String   @id @default(cuid())
+  connectionId    String
+  status          String   // "started", "running", "completed", "failed"
+  recordsProcessed Int     @default(0)
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  errorMessage    String?  @db.Text
+  metadata        Json?    // Additional sync metadata
+  
+  // Relations
+  connection      AirbyteConnection @relation(fields: [connectionId], references: [id])
+  
+  @@index([connectionId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("sync_logs")
+}
+
+model AppMetrics {
+  id            String   @id @default(cuid())
+  shop          String
+  metricName    String   // "api_calls", "sync_duration", "error_count", etc.
+  metricValue   Float
+  timestamp     DateTime @default(now())
+  metadata      Json?    // Additional metric metadata
+  
+  @@index([shop])
+  @@index([metricName])
+  @@index([timestamp])
+  @@map("app_metrics")
 }

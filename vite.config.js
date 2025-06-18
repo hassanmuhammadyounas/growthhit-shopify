@@ -58,6 +58,14 @@ export default defineConfig({
   ],
   build: {
     assetsInlineLimit: 0,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'shopify': ['@shopify/shopify-app-remix', '@shopify/app-bridge-react'],
+          'polaris': ['@shopify/polaris'],
+        },
+      },
+    },
   },
   optimizeDeps: {
     include: ["@shopify/app-bridge-react", "@shopify/polaris"],

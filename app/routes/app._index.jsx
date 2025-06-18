@@ -15,142 +15,264 @@ import {
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { logger, airbyteLogger, Logger } from "../utils/logger.server";
 
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
-  
-  // Check for existing Airbyte connection
-  const existingConnection = await prisma.airbyteConnection.findUnique({
-    where: { shop: session.shop }
-  });
-  
-  return json({
-    shop: session.shop,
-    accessToken: session.accessToken,
-    connectionStatus: existingConnection?.status || "ready",
-    connectionData: existingConnection ? {
-      connectionId: existingConnection.connectionId,
-      sourceId: existingConnection.sourceId,
-      destinationId: existingConnection.destinationId,
-      jobId: existingConnection.jobId,
-      errorMessage: existingConnection.errorMessage,
-    } : null,
-  });
+  const startTime = Date.now();
+  const requestId = Logger.generateRequestId();
+  let shop = null;
+
+  try {
+    const { session } = await authenticate.admin(request);
+    shop = session.shop;
+
+    await logger.info("App index loaded", { 
+      requestId,
+      shop,
+      userAgent: request.headers.get("user-agent")
+    }, request, shop);
+
+    // Check for existing Airbyte connection
+    const existingConnection = await prisma.airbyteConnection.findUnique({
+      where: { shop: session.shop }
+    });
+
+    await logger.database("findUnique", "AirbyteConnection", shop, {
+      requestId,
+      found: !!existingConnection
+    });
+
+    const loadTime = Date.now() - startTime;
+    await logger.metric("page_load_time", loadTime, shop, { 
+      page: "app_index",
+      requestId 
+    });
+
+    return json({
+      shop: session.shop,
+      accessToken: session.accessToken,
+      connectionStatus: existingConnection?.status || "ready",
+      connectionData: existingConnection ? {
+        connectionId: existingConnection.connectionId,
+        sourceId: existingConnection.sourceId,
+        destinationId: existingConnection.destinationId,
+        jobId: existingConnection.jobId,
+        errorMessage: existingConnection.errorMessage,
+        lastSyncAt: existingConnection.lastSyncAt,
+        syncCount: existingConnection.syncCount,
+      } : null,
+    });
+  } catch (error) {
+    await logger.error("Failed to load app index", {
+      requestId,
+      error: error.message,
+      stack: error.stack
+    }, request, shop);
+    
+    throw error;
+  }
 };
 
 export const action = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
-  const formData = await request.formData();
-  const action = formData.get("action");
+  const startTime = Date.now();
+  const requestId = Logger.generateRequestId();
+  let shop = null;
 
-  if (action === "connect" || action === "reconnect") {
-    try {
-      // Update status to connecting
-      await prisma.airbyteConnection.upsert({
-        where: { shop: session.shop },
-        update: { 
-          status: "connecting",
-          errorMessage: null,
-          updatedAt: new Date()
-        },
-        create: { 
-          shop: session.shop,
-          status: "connecting"
-        }
-      });
+  try {
+    const { session } = await authenticate.admin(request);
+    shop = session.shop;
+    
+    const formData = await request.formData();
+    const action = formData.get("action");
 
-      // Call the Airbyte Handler API
-      const response = await fetch(
-        "https://us-central1-growthhit-7be7b.cloudfunctions.net/airbyte-handler",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            shop: session.shop,
-            api_password: session.accessToken,
-          }),
-        }
-      );
+    await logger.info("Action triggered", {
+      requestId,
+      action,
+      shop
+    }, request, shop);
 
-      const result = await response.json();
+    if (action === "connect" || action === "reconnect") {
+      try {
+        await airbyteLogger.airbyteOperation("connection_attempt", shop, "starting", {
+          requestId,
+          action
+        });
 
-      if (response.ok) {
-        // Update status to connected with details
+        // Update status to connecting
         await prisma.airbyteConnection.upsert({
           where: { shop: session.shop },
-          update: {
-            status: "connected",
-            connectionId: result.connection_id,
-            sourceId: result.source_id,
-            destinationId: result.destination_id,
-            jobId: result.job_id,
+          update: { 
+            status: "connecting",
             errorMessage: null,
             updatedAt: new Date()
           },
-          create: {
+          create: { 
             shop: session.shop,
-            status: "connected",
-            connectionId: result.connection_id,
-            sourceId: result.source_id,
-            destinationId: result.destination_id,
-            jobId: result.job_id,
+            status: "connecting"
           }
         });
 
-        return json({
-          success: true,
-          message: "Successfully connected to Airbyte!",
-          data: result,
+        await logger.database("upsert", "AirbyteConnection", shop, {
+          requestId,
+          status: "connecting"
         });
-      } else {
+
+        // Call the Airbyte Handler API
+        const apiStartTime = Date.now();
+        
+        await airbyteLogger.info("Calling Airbyte Handler API", {
+          requestId,
+          shop,
+          endpoint: "https://us-central1-growthhit-7be7b.cloudfunctions.net/airbyte-handler"
+        });
+
+        const response = await fetch(
+          "https://us-central1-growthhit-7be7b.cloudfunctions.net/airbyte-handler",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              shop: session.shop,
+              api_password: session.accessToken,
+            }),
+          }
+        );
+
+        const apiDuration = Date.now() - apiStartTime;
+        const result = await response.json();
+
+        await logger.apiCall(
+          "POST",
+          "airbyte-handler",
+          response.status,
+          apiDuration,
+          shop,
+          { requestId, resultKeys: Object.keys(result) }
+        );
+
+        if (response.ok) {
+          // Update status to connected with details
+          await prisma.airbyteConnection.upsert({
+            where: { shop: session.shop },
+            update: {
+              status: "connected",
+              connectionId: result.connection_id,
+              sourceId: result.source_id,
+              destinationId: result.destination_id,
+              jobId: result.job_id,
+              errorMessage: null,
+              lastSyncAt: new Date(),
+              syncCount: (await prisma.airbyteConnection.findUnique({
+                where: { shop: session.shop }
+              }))?.syncCount || 0 + 1,
+              updatedAt: new Date()
+            },
+            create: {
+              shop: session.shop,
+              status: "connected",
+              connectionId: result.connection_id,
+              sourceId: result.source_id,
+              destinationId: result.destination_id,
+              jobId: result.job_id,
+              lastSyncAt: new Date(),
+              syncCount: 1,
+            }
+          });
+
+          await airbyteLogger.airbyteOperation("connection_attempt", shop, "connected", {
+            requestId,
+            connectionId: result.connection_id,
+            duration: Date.now() - startTime
+          });
+
+          await logger.metric("successful_connections", 1, shop, { requestId });
+
+          return json({
+            success: true,
+            message: "Successfully connected to Airbyte!",
+            data: result,
+          });
+        } else {
+          // Update status to failed with error
+          await prisma.airbyteConnection.upsert({
+            where: { shop: session.shop },
+            update: {
+              status: "failed",
+              errorMessage: result.message || "Failed to connect to Airbyte",
+              updatedAt: new Date()
+            },
+            create: {
+              shop: session.shop,
+              status: "failed",
+              errorMessage: result.message || "Failed to connect to Airbyte",
+            }
+          });
+
+          await airbyteLogger.airbyteOperation("connection_attempt", shop, "failed", {
+            requestId,
+            error: result.message,
+            apiStatus: response.status
+          });
+
+          await logger.metric("failed_connections", 1, shop, { requestId });
+
+          return json({
+            success: false,
+            message: result.message || "Failed to connect to Airbyte",
+            error: result.error,
+          });
+        }
+      } catch (error) {
         // Update status to failed with error
         await prisma.airbyteConnection.upsert({
           where: { shop: session.shop },
           update: {
             status: "failed",
-            errorMessage: result.message || "Failed to connect to Airbyte",
+            errorMessage: "Network error occurred while connecting to Airbyte",
             updatedAt: new Date()
           },
           create: {
             shop: session.shop,
             status: "failed",
-            errorMessage: result.message || "Failed to connect to Airbyte",
+            errorMessage: "Network error occurred while connecting to Airbyte",
           }
         });
 
+        await airbyteLogger.error("Connection attempt failed", {
+          requestId,
+          error: error.message,
+          stack: error.stack,
+          shop
+        });
+
+        await logger.metric("connection_errors", 1, shop, { requestId });
+
         return json({
           success: false,
-          message: result.message || "Failed to connect to Airbyte",
-          error: result.error,
+          message: "Network error occurred while connecting to Airbyte",
+          error: error.message,
         });
       }
-    } catch (error) {
-      // Update status to failed with error
-      await prisma.airbyteConnection.upsert({
-        where: { shop: session.shop },
-        update: {
-          status: "failed",
-          errorMessage: "Network error occurred while connecting to Airbyte",
-          updatedAt: new Date()
-        },
-        create: {
-          shop: session.shop,
-          status: "failed",
-          errorMessage: "Network error occurred while connecting to Airbyte",
-        }
-      });
-
-      return json({
-        success: false,
-        message: "Network error occurred while connecting to Airbyte",
-        error: error.message,
-      });
     }
-  }
 
-  return json({ success: false, message: "Invalid action" });
+    await logger.warn("Invalid action received", {
+      requestId,
+      action,
+      shop
+    });
+
+    return json({ success: false, message: "Invalid action" });
+  } catch (error) {
+    await logger.error("Action failed", {
+      requestId,
+      error: error.message,
+      stack: error.stack
+    }, request, shop);
+    
+    throw error;
+  }
 };
 
 export default function Index() {
@@ -189,7 +311,10 @@ export default function Index() {
     }
     
     if (connectionStatus === "connected") {
-      return "Your Shopify store is successfully connected to Airbyte. Data syncing is active.";
+      const syncInfo = connectionData?.lastSyncAt 
+        ? ` Last sync: ${new Date(connectionData.lastSyncAt).toLocaleString()}. Total syncs: ${connectionData.syncCount || 0}.`
+        : "";
+      return `Your Shopify store is successfully connected to Airbyte. Data syncing is active.${syncInfo}`;
     }
     
     if (connectionStatus === "failed") {
@@ -202,140 +327,116 @@ export default function Index() {
 
   const getButtonText = () => {
     if (isConnecting) return "Connecting...";
-    if (connectionStatus === "connected") return "Connected";
-    if (connectionStatus === "failed") return "Reconnect to Airbyte";
+    if (connectionStatus === "connected") return "Reconnect";
     return "Connect to Airbyte";
   };
 
   const getButtonAction = () => {
-    return connectionStatus === "failed" ? "reconnect" : "connect";
+    return connectionStatus === "connected" ? "reconnect" : "connect";
   };
 
-  // Get connection data from either action response or database
-  const displayData = actionData?.data || connectionData;
+  const renderConnectionDetails = () => {
+    if (connectionStatus === "connected" && connectionData) {
+      return (
+        <Card>
+          <Text variant="headingMd" as="h3">Connection Details</Text>
+          <Box paddingBlockStart="200">
+            <Text as="p"><strong>Connection ID:</strong> {connectionData.connectionId}</Text>
+            <Text as="p"><strong>Source ID:</strong> {connectionData.sourceId}</Text>
+            <Text as="p"><strong>Destination ID:</strong> {connectionData.destinationId}</Text>
+            <Text as="p"><strong>Job ID:</strong> {connectionData.jobId}</Text>
+            {connectionData.lastSyncAt && (
+              <Text as="p"><strong>Last Sync:</strong> {new Date(connectionData.lastSyncAt).toLocaleString()}</Text>
+            )}
+            {connectionData.syncCount && (
+              <Text as="p"><strong>Total Syncs:</strong> {connectionData.syncCount}</Text>
+            )}
+          </Box>
+        </Card>
+      );
+    }
+    return null;
+  };
 
   return (
-    <Page title="GrowthHit - Airbyte Integration">
+    <Page>
       <Layout>
         <Layout.Section>
           <Card>
-            <Box padding="400">
-              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
-                <Text variant="headingLg" as="h2">
-                  Airbyte Connection
-                </Text>
-                {getStatusBadge()}
-              </div>
-              
-              <Text variant="bodyMd" color="subdued" as="p">
-                Store: <strong>{shop}</strong>
+            <Box paddingBlockEnd="200">
+              <Text variant="headingLg" as="h2">
+                GrowthHit Analytics Integration
               </Text>
-              
-              <Box paddingBlockStart="400">
-                <Divider />
-              </Box>
-              
-              <Box paddingBlockStart="400">
-                <Text variant="bodyMd" as="p">
-                  {getStatusMessage()}
-                </Text>
-              </Box>
+            </Box>
+            
+            <Box paddingBlockEnd="200">
+              <Text as="p">
+                Connect your Shopify store to sync data automatically with BigQuery through Airbyte.
+              </Text>
+            </Box>
 
-              {connectionStatus === "connecting" && (
-                <Box paddingBlockStart="400">
-                  <Banner status="info" title="Connecting to Airbyte">
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <Spinner size="small" />
-                      <p>Setting up your data pipeline... Please wait.</p>
-                    </div>
-                  </Banner>
-                </Box>
-              )}
+            <Box paddingBlockEnd="200">
+              {getStatusBadge()}
+            </Box>
 
-              {connectionStatus === "failed" && (
-                <Box paddingBlockStart="400">
-                  <Banner status="critical" title="Connection Failed">
-                    <p>{getStatusMessage()}</p>
-                    {(actionData?.error || connectionData?.errorMessage) && (
-                      <Box paddingBlockStart="200">
-                        <Text variant="bodySmall" color="subdued" as="p">
-                          Error details: {actionData?.error || connectionData?.errorMessage}
-                        </Text>
-                      </Box>
-                    )}
-                  </Banner>
-                </Box>
-              )}
+            <Box paddingBlockEnd="400">
+              <Text as="p">
+                {getStatusMessage()}
+              </Text>
+            </Box>
 
-              {connectionStatus === "connected" && (
-                <Box paddingBlockStart="400">
-                  <Banner status="success" title="Successfully Connected!">
-                    <p>Your Shopify store is now connected to Airbyte. Data syncing will begin shortly.</p>
-                    {displayData && (
-                      <Box paddingBlockStart="200">
-                        {displayData.connectionId && (
-                          <Text variant="bodySmall" color="subdued" as="p">
-                            Connection ID: {displayData.connectionId}
-                          </Text>
-                        )}
-                        {displayData.sourceId && (
-                          <Text variant="bodySmall" color="subdued" as="p">
-                            Source ID: {displayData.sourceId}
-                          </Text>
-                        )}
-                        {displayData.destinationId && (
-                          <Text variant="bodySmall" color="subdued" as="p">
-                            Destination ID: {displayData.destinationId}
-                          </Text>
-                        )}
-                        {displayData.jobId && (
-                          <Text variant="bodySmall" color="subdued" as="p">
-                            Initial Sync Job ID: {displayData.jobId}
-                          </Text>
-                        )}
-                      </Box>
-                    )}
-                  </Banner>
-                </Box>
-              )}
-
-              <Box paddingBlockStart="500">
-                <Form method="post">
-                  <input type="hidden" name="action" value={getButtonAction()} />
-                  <Button
-                    submit
-                    primary
-                    loading={isConnecting}
-                    disabled={isConnecting || connectionStatus === "connected"}
-                  >
-                    {getButtonText()}
-                  </Button>
-                </Form>
-              </Box>
-
-              <Box paddingBlockStart="500">
-                <Card background="bg-surface-secondary">
-                  <Box padding="300">
-                    <Text variant="headingSmall" as="h3">
-                      What happens when you connect?
+            {/* Action Banner */}
+            {actionData && actionData.success === false && (
+              <Box paddingBlockEnd="400">
+                <Banner status="critical">
+                  <Text as="p">{actionData.message}</Text>
+                  {actionData.error && (
+                    <Text as="p" tone="subdued">
+                      Technical details: {actionData.error}
                     </Text>
-                    <Box paddingBlockStart="200">
-                      <Text variant="bodySmall" as="p">
-                        • Creates a secure connection between your Shopify store and BigQuery
-                      </Text>
-                      <Text variant="bodySmall" as="p">
-                        • Syncs products, orders, transactions, and refunds data
-                      </Text>
-                      <Text variant="bodySmall" as="p">
-                        • Sets up daily automated data synchronization
-                      </Text>
-                      <Text variant="bodySmall" as="p">
-                        • All data is securely stored in your BigQuery dataset
-                      </Text>
-                    </Box>
-                  </Box>
-                </Card>
+                  )}
+                </Banner>
               </Box>
+            )}
+
+            {actionData && actionData.success === true && (
+              <Box paddingBlockEnd="400">
+                <Banner status="success">
+                  <Text as="p">{actionData.message}</Text>
+                </Banner>
+              </Box>
+            )}
+
+            {/* Connection Form */}
+            <Form method="post">
+              <input type="hidden" name="action" value={getButtonAction()} />
+              <Button
+                variant="primary"
+                submit
+                loading={isConnecting}
+                disabled={isConnecting}
+              >
+                {isConnecting && <Spinner size="small" accessibilityLabel="Connecting" />}
+                {getButtonText()}
+              </Button>
+            </Form>
+          </Card>
+        </Layout.Section>
+
+        {/* Connection Details */}
+        <Layout.Section>
+          {renderConnectionDetails()}
+        </Layout.Section>
+
+        {/* Shop Information */}
+        <Layout.Section>
+          <Card>
+            <Text variant="headingMd" as="h3">Shop Information</Text>
+            <Box paddingBlockStart="200">
+              <Text as="p"><strong>Shop Domain:</strong> {shop}</Text>
+              <Text as="p" tone="subdued">
+                This information is used to configure your data sync settings.
+              </Text>
             </Box>
           </Card>
         </Layout.Section>

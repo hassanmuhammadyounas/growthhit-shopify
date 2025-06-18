@@ -1,0 +1,13 @@
+{
+  "framework": "remix",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "devCommand": "npm run dev",
+  "outputDirectory": "build",
+  "regions": ["iad1"],
+  "functions": {
+    "app/**/*.js": {
+      "maxDuration": 30
+    }
+  }
+} 
