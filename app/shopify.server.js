@@ -10,130 +10,7 @@ import { restResources } from "@shopify/shopify-api/rest/admin/2023-04";
 import prisma from "./db.server";
 import { LogSeverity } from "@shopify/shopify-api";
 
-// Create a debugging wrapper for PrismaSessionStorage
-class DebuggingPrismaSessionStorage extends PrismaSessionStorage {
-  constructor(prisma) {
-    super(prisma);
-    this.prisma = prisma;
-  }
 
-  async storeSession(session) {
-    const startTime = Date.now();
-    console.log("[session-storage] STORE SESSION START", {
-      sessionId: session.id,
-      shop: session.shop,
-      isOnline: session.isOnline
-    });
-    
-    try {
-      const result = await super.storeSession(session);
-      console.log("[session-storage] STORE SESSION SUCCESS", {
-        sessionId: session.id,
-        shop: session.shop,
-        duration: Date.now() - startTime
-      });
-      return result;
-    } catch (error) {
-      console.error("[session-storage] STORE SESSION FAILED", {
-        sessionId: session.id,
-        shop: session.shop,
-        duration: Date.now() - startTime,
-        error: error.message
-      });
-      throw error;
-    }
-  }
-
-  async loadSession(id) {
-    const startTime = Date.now();
-    console.log("[session-storage] LOAD SESSION START", { sessionId: id });
-    
-    try {
-      const result = await super.loadSession(id);
-      console.log("[session-storage] LOAD SESSION SUCCESS", {
-        sessionId: id,
-        found: !!result,
-        shop: result?.shop,
-        duration: Date.now() - startTime
-      });
-      return result;
-    } catch (error) {
-      console.error("[session-storage] LOAD SESSION FAILED", {
-        sessionId: id,
-        duration: Date.now() - startTime,
-        error: error.message
-      });
-      throw error;
-    }
-  }
-
-  async deleteSession(id) {
-    const startTime = Date.now();
-    console.log("[session-storage] DELETE SESSION START", { sessionId: id });
-    
-    try {
-      const result = await super.deleteSession(id);
-      console.log("[session-storage] DELETE SESSION SUCCESS", {
-        sessionId: id,
-        duration: Date.now() - startTime
-      });
-      return result;
-    } catch (error) {
-      console.error("[session-storage] DELETE SESSION FAILED", {
-        sessionId: id,
-        duration: Date.now() - startTime,
-        error: error.message
-      });
-      throw error;
-    }
-  }
-
-  async deleteSessions(ids) {
-    const startTime = Date.now();
-    console.log("[session-storage] DELETE SESSIONS START", { 
-      sessionIds: ids,
-      count: ids.length 
-    });
-    
-    try {
-      const result = await super.deleteSessions(ids);
-      console.log("[session-storage] DELETE SESSIONS SUCCESS", {
-        count: ids.length,
-        duration: Date.now() - startTime
-      });
-      return result;
-    } catch (error) {
-      console.error("[session-storage] DELETE SESSIONS FAILED", {
-        count: ids.length,
-        duration: Date.now() - startTime,
-        error: error.message
-      });
-      throw error;
-    }
-  }
-
-  async findSessionsByShop(shop) {
-    const startTime = Date.now();
-    console.log("[session-storage] FIND SESSIONS BY SHOP START", { shop });
-    
-    try {
-      const result = await super.findSessionsByShop(shop);
-      console.log("[session-storage] FIND SESSIONS BY SHOP SUCCESS", {
-        shop,
-        count: result.length,
-        duration: Date.now() - startTime
-      });
-      return result;
-    } catch (error) {
-      console.error("[session-storage] FIND SESSIONS BY SHOP FAILED", {
-        shop,
-        duration: Date.now() - startTime,
-        error: error.message
-      });
-      throw error;
-    }
-  }
-}
 
 // Validate required environment variables
 const requiredEnvVars = {
@@ -167,7 +44,7 @@ const shopify = shopifyApp({
   scopes: process.env.SCOPES?.split(","),
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
-  sessionStorage: new DebuggingPrismaSessionStorage(prisma),
+  sessionStorage: new PrismaSessionStorage(prisma),
   isEmbeddedApp: true,
   distribution: AppDistribution.AppStore,
   logger: { level: LogSeverity.Debug },
@@ -200,93 +77,22 @@ export async function authWithLog(request) {
     shop: shop,
     hasIdToken: !!url.searchParams.get('id_token'),
     hasSession: !!url.searchParams.get('session'),
-    hasHmac: !!url.searchParams.get('hmac'),
-    searchParams: url.searchParams.toString()
+    hasHmac: !!url.searchParams.get('hmac')
   });
   
   try {
-    // Add detailed step-by-step logging
-    let stepTimer = Date.now();
+    // For Vercel deployments, use shorter timeout to prevent function timeout
+    const VERCEL_SAFE_TIMEOUT = 45000; // 45 seconds (well under Vercel's 90s limit)
     
-    console.log("[auth] STEP 1: About to call authenticate.admin", {
-      elapsed: Date.now() - t0,
-      shop
+    const authPromise = authenticate.admin(request);
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`OAuth timeout after ${VERCEL_SAFE_TIMEOUT/1000}s. For new stores, please install using 'shopify app dev' locally first, then redeploy. This avoids Vercel serverless timeout issues during initial OAuth.`));
+      }, VERCEL_SAFE_TIMEOUT);
     });
     
-    // Add periodic logging during long OAuth processes
-    const timeoutId = setInterval(() => {
-      console.log("[auth] Still processing authenticate.admin...", {
-        elapsed: Date.now() - t0,
-        path: url.pathname,
-        shop
-      });
-    }, 5000); // Log every 5 seconds
-    
-    // Test database connectivity before OAuth
-    console.log("[auth] STEP 2: Testing database connectivity", {
-      elapsed: Date.now() - t0,
-      shop
-    });
-    
-    try {
-      await prisma.$queryRaw`SELECT 1 as test`;
-      console.log("[auth] STEP 2: Database connectivity OK", {
-        elapsed: Date.now() - t0,
-        dbTime: Date.now() - stepTimer,
-        shop
-      });
-    } catch (dbError) {
-      console.error("[auth] STEP 2: Database connectivity FAILED", {
-        elapsed: Date.now() - t0,
-        error: dbError.message,
-        shop
-      });
-    }
-    
-    stepTimer = Date.now();
-    console.log("[auth] STEP 3: Calling Shopify authenticate.admin", {
-      elapsed: Date.now() - t0,
-      shop
-    });
-    
-    // Directly call Shopify's authenticate.admin
-    const result = await authenticate.admin(request);
-    
-    clearInterval(timeoutId);
-    
-    console.log("[auth] STEP 4: authenticate.admin completed successfully", {
-      elapsed: Date.now() - t0,
-      authTime: Date.now() - stepTimer,
-      shop: result?.session?.shop || shop,
-      hasSession: !!result?.session,
-      sessionId: result?.session?.id,
-      isOnline: result?.session?.isOnline
-    });
-    
-    // Test session storage after OAuth
-    if (result?.session) {
-      stepTimer = Date.now();
-      console.log("[auth] STEP 5: Testing session storage after OAuth", {
-        elapsed: Date.now() - t0,
-        shop: result.session.shop
-      });
-      
-      try {
-        const storedSession = await sessionStorage.loadSession(result.session.id);
-        console.log("[auth] STEP 5: Session storage test OK", {
-          elapsed: Date.now() - t0,
-          storageTime: Date.now() - stepTimer,
-          hasStoredSession: !!storedSession,
-          shop: result.session.shop
-        });
-      } catch (storageError) {
-        console.error("[auth] STEP 5: Session storage test FAILED", {
-          elapsed: Date.now() - t0,
-          error: storageError.message,
-          shop: result.session.shop
-        });
-      }
-    }
+    // Race between auth and timeout
+    const result = await Promise.race([authPromise, timeoutPromise]);
     
     console.log("[auth] authenticate.admin finished successfully", {
       totalTime: Date.now() - t0,
@@ -296,43 +102,27 @@ export async function authWithLog(request) {
     
     return result;
   } catch (error) {
-    clearInterval(timeoutId);
+    const elapsed = Date.now() - t0;
     
     console.error("[auth] authenticate.admin failed", {
-      totalTime: Date.now() - t0,
+      totalTime: elapsed,
       path: url.pathname,
       shop,
       error: error.message,
-      errorType: error.constructor.name,
-      stack: error.stack?.split('\n').slice(0, 5).join('\n') // First 5 lines of stack
+      errorType: error.constructor.name
     });
     
-    // Additional error context
-    if (error.message.includes('timeout')) {
-      console.error("[auth] TIMEOUT ERROR DETAILS", {
+    // Provide helpful error messages for common OAuth issues
+    if (error.message.includes('timeout') || elapsed > 40000) {
+      console.error("[auth] OAUTH TIMEOUT - VERCEL DEPLOYMENT ISSUE", {
         shop,
-        elapsed: Date.now() - t0,
-        errorMessage: error.message,
-        possibleCauses: [
-          'Database connection slow/hanging',
-          'Shopify API timeout',
-          'Session storage timeout',
-          'Network connectivity issues'
-        ]
+        elapsed,
+        solution: "Install app locally first: 'shopify app dev', then deploy",
+        documentation: "https://community.shopify.dev/t/shopify-app-authorization-gets-stuck-in-an-infinite-redirect/12592"
       });
-    }
-    
-    if (error.message.includes('database') || error.message.includes('prisma')) {
-      console.error("[auth] DATABASE ERROR DETAILS", {
-        shop,
-        elapsed: Date.now() - t0,
-        errorMessage: error.message,
-        possibleCauses: [
-          'Database connection pool exhausted',
-          'Long-running query',
-          'Database server overloaded'
-        ]
-      });
+      
+      // Throw a more user-friendly error
+      throw new Error(`OAuth installation timed out. This is a known issue with Vercel deployments. Please install the app locally using 'shopify app dev' first, then redeploy to production.`);
     }
     
     throw error;
