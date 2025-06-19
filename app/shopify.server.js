@@ -47,6 +47,7 @@ const shopify = shopifyApp({
   sessionStorage: new PrismaSessionStorage(prisma),
   isEmbeddedApp: true,
   distribution: AppDistribution.AppStore,
+  useOnlineTokens: false,
   logger: { level: LogSeverity.Debug },
   future: {
     unstable_newEmbeddedAuthStrategy: true,
@@ -66,65 +67,23 @@ export const login = shopify.login;
 export const registerWebhooks = shopify.registerWebhooks;
 export const sessionStorage = shopify.sessionStorage;
 
-// Helper that wraps authenticate.admin with timing logs
+// Helper around authenticate.admin with lightweight logging (no custom timeout)
 export async function authWithLog(request) {
   const t0 = Date.now();
   const url = new URL(request.url);
-  const shop = url.searchParams.get('shop');
-  
-  console.log("[auth] Starting authenticate.admin...", { 
-    path: url.pathname,
-    shop: shop,
-    hasIdToken: !!url.searchParams.get('id_token'),
-    hasSession: !!url.searchParams.get('session'),
-    hasHmac: !!url.searchParams.get('hmac')
-  });
-  
   try {
-    // For Vercel deployments, use shorter timeout to prevent function timeout
-    const VERCEL_SAFE_TIMEOUT = 45000; // 45 seconds (well under Vercel's 90s limit)
-    
-    const authPromise = authenticate.admin(request);
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => {
-        reject(new Error(`OAuth timeout after ${VERCEL_SAFE_TIMEOUT/1000}s. For new stores, please install using 'shopify app dev' locally first, then redeploy. This avoids Vercel serverless timeout issues during initial OAuth.`));
-      }, VERCEL_SAFE_TIMEOUT);
-    });
-    
-    // Race between auth and timeout
-    const result = await Promise.race([authPromise, timeoutPromise]);
-    
-    console.log("[auth] authenticate.admin finished successfully", {
-      totalTime: Date.now() - t0,
+    const result = await authenticate.admin(request);
+    console.log("[auth] authenticate.admin finished", {
       path: url.pathname,
-      shop: result?.session?.shop || shop,
+      shop: result?.session?.shop,
+      ms: Date.now() - t0,
     });
-    
     return result;
   } catch (error) {
-    const elapsed = Date.now() - t0;
-    
     console.error("[auth] authenticate.admin failed", {
-      totalTime: elapsed,
       path: url.pathname,
-      shop,
       error: error.message,
-      errorType: error.constructor.name
     });
-    
-    // Provide helpful error messages for common OAuth issues
-    if (error.message.includes('timeout') || elapsed > 40000) {
-      console.error("[auth] OAUTH TIMEOUT - VERCEL DEPLOYMENT ISSUE", {
-        shop,
-        elapsed,
-        solution: "Install app locally first: 'shopify app dev', then deploy",
-        documentation: "https://community.shopify.dev/t/shopify-app-authorization-gets-stuck-in-an-infinite-redirect/12592"
-      });
-      
-      // Throw a more user-friendly error
-      throw new Error(`OAuth installation timed out. This is a known issue with Vercel deployments. Please install the app locally using 'shopify app dev' first, then redeploy to production.`);
-    }
-    
     throw error;
   }
 }
