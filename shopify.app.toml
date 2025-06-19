@@ -1,5 +1,3 @@
-# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
-
 client_id = "ad0eed26825cfa5592bfb7f05dc18fdc"
 name = "GrowthHit"
 handle = "growthhit"
