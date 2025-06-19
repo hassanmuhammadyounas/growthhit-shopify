@@ -1,5 +1,4 @@
 import { PrismaClient } from "@prisma/client";
-import { withAccelerate } from "@prisma/extension-accelerate";
 
 let prisma;
 
@@ -22,35 +21,37 @@ const dbLog = (level, message, context = {}) => {
 };
 
 if (process.env.NODE_ENV === "production") {
-  dbLog("info", "Initializing Prisma Client for production (no Accelerate)");
-
-  prisma = new PrismaClient({
-    log: [
-      { emit: 'event', level: 'error' },
-      { emit: 'event', level: 'warn' },
-    ],
-  });
-
-  prisma.$on('error', (e) => {
-    dbLog("error", "Database error", {
-      target: e.target,
-      message: e.message,
+  dbLog("info", "Initializing Prisma Client for production");
+  
+  if (!global.prismaGlobal) {
+    global.prismaGlobal = new PrismaClient({
+      log: [
+        { emit: 'event', level: 'error' },
+        { emit: 'event', level: 'warn' },
+      ],
     });
-  });
 
-  prisma.$on('warn', (e) => {
-    dbLog("warn", "Database warning", {
-      target: e.target,
-      message: e.message,
+    global.prismaGlobal.$on('error', (e) => {
+      dbLog("error", "Database error", {
+        target: e.target,
+        message: e.message,
+      });
     });
-  });
 
+    global.prismaGlobal.$on('warn', (e) => {
+      dbLog("warn", "Database warning", {
+        target: e.target,
+        message: e.message,
+      });
+    });
+  }
+  
+  prisma = global.prismaGlobal;
 } else {
   dbLog("info", "Initializing Prisma Client for development");
   
   if (!global.prismaGlobal) {
-    // Create base client first
-    const baseClient = new PrismaClient({
+    global.prismaGlobal = new PrismaClient({
       log: [
         { emit: 'event', level: 'query' },
         { emit: 'event', level: 'error' },
@@ -59,18 +60,9 @@ if (process.env.NODE_ENV === "production") {
       ],
     });
 
-    // Set up event listeners on base client
-    baseClient.$on('query', (e) => {
-      // Log slow queries directly in the event handler
+    global.prismaGlobal.$on('query', (e) => {
       if (e.duration > 500) {
         dbLog("warn", "Slow query detected", {
-          query: e.query,
-          params: e.params,
-          duration: `${e.duration}ms`,
-          target: e.target
-        });
-      } else {
-        dbLog("info", "Database query", {
           query: e.query,
           params: e.params,
           duration: `${e.duration}ms`,
@@ -79,29 +71,26 @@ if (process.env.NODE_ENV === "production") {
       }
     });
 
-    baseClient.$on('error', (e) => {
+    global.prismaGlobal.$on('error', (e) => {
       dbLog("error", "Database error", {
         target: e.target,
         message: e.message
       });
     });
 
-    baseClient.$on('warn', (e) => {
+    global.prismaGlobal.$on('warn', (e) => {
       dbLog("warn", "Database warning", {
         target: e.target,
         message: e.message
       });
     });
 
-    baseClient.$on('info', (e) => {
+    global.prismaGlobal.$on('info', (e) => {
       dbLog("info", "Database info", {
         target: e.target,
         message: e.message
       });
     });
-
-    // Apply Accelerate extension after setting up listeners
-    global.prismaGlobal = baseClient.$extends(withAccelerate());
   }
   
   prisma = global.prismaGlobal;
@@ -122,8 +111,7 @@ async function connectWithRetry() {
     dbLog("info", `Connected in ${duration}ms`);
     dbLog("info", "Successfully connected to database", {
       attempt: connectionAttempts,
-      environment: process.env.NODE_ENV,
-      accelerate: process.env.NODE_ENV !== "production"
+      environment: process.env.NODE_ENV
     });
   } catch (error) {
     dbLog("error", `Database connection failed (attempt ${connectionAttempts})`, {
