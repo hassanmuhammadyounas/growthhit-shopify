@@ -33,20 +33,25 @@ if (process.env.NODE_ENV === "production") {
     ],
   }).$extends(withAccelerate());
 
-  // Production logging - only errors and warnings
-  prisma.$on('error', (e) => {
-    dbLog("error", "Database error", {
-      target: e.target,
-      message: e.message
+  // Safely attach production event listeners (Accelerate client may not support $on)
+  if (typeof prisma.$on === 'function') {
+    // Production logging - only errors and warnings
+    prisma.$on('error', (e) => {
+      dbLog("error", "Database error", {
+        target: e.target,
+        message: e.message
+      });
     });
-  });
 
-  prisma.$on('warn', (e) => {
-    dbLog("warn", "Database warning", {
-      target: e.target,
-      message: e.message
+    prisma.$on('warn', (e) => {
+      dbLog("warn", "Database warning", {
+        target: e.target,
+        message: e.message
+      });
     });
-  });
+  } else {
+    dbLog("warn", "Prisma Accelerate client does not support $on event listeners – skipping error/warn handlers");
+  }
 
 } else {
   dbLog("info", "Initializing Prisma Client for development");
