@@ -33,15 +33,78 @@ export const loader = async ({ request }) => {
       userAgent: request.headers.get("user-agent")
     }, request, shop);
 
-    // Check for existing Airbyte connection
-    const existingConnection = await prisma.airbyteConnection.findUnique({
-      where: { shop: session.shop }
-    });
+    /* ------------------------------------------------------------------
+       Call the Airbyte handler to determine current connection status   
+       (If a connection already exists, the function simply returns the 
+        saved IDs and doesn't create a new one.)                         
+    ------------------------------------------------------------------*/
 
-    await logger.database("findUnique", "AirbyteConnection", shop, {
-      requestId,
-      found: !!existingConnection
-    });
+    const apiStart = Date.now();
+    const airbyteResp = await fetch(
+      "https://us-central1-growthhit-7be7b.cloudfunctions.net/airbyte-handler",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          shop: session.shop,
+          api_password: session.accessToken,
+        }),
+      }
+    ).catch(() => null);
+
+    let status = "ready";
+    let connectionPayload = null;
+
+    if (airbyteResp && airbyteResp.ok) {
+      const result = await airbyteResp.json();
+      if (result?.connection_id) {
+        status = "connected";
+        connectionPayload = {
+          connectionId: result.connection_id,
+          sourceId: result.source_id,
+          destinationId: result.destination_id,
+          jobId: result.job_id,
+          lastSyncAt: result.last_sync_at ? new Date(result.last_sync_at) : null,
+          syncCount: result.sync_count || 0,
+        };
+      }
+    } else if (airbyteResp) {
+      status = "failed";
+    }
+
+    await logger.apiCall(
+      "POST",
+      "airbyte-handler-status",
+      airbyteResp ? airbyteResp.status : 0,
+      Date.now() - apiStart,
+      shop,
+      { requestId, status }
+    );
+
+    // Persist the latest status in DB for reference, ignore errors silently
+    try {
+      await prisma.airbyteConnection.upsert({
+        where: { shop: session.shop },
+        update: {
+          status,
+          connectionId: connectionPayload?.connectionId ?? undefined,
+          sourceId: connectionPayload?.sourceId ?? undefined,
+          destinationId: connectionPayload?.destinationId ?? undefined,
+          jobId: connectionPayload?.jobId ?? undefined,
+          lastSyncAt: connectionPayload?.lastSyncAt ?? undefined,
+          updatedAt: new Date(),
+        },
+        create: {
+          shop: session.shop,
+          status,
+          connectionId: connectionPayload?.connectionId,
+          sourceId: connectionPayload?.sourceId,
+          destinationId: connectionPayload?.destinationId,
+          jobId: connectionPayload?.jobId,
+          lastSyncAt: connectionPayload?.lastSyncAt,
+        },
+      });
+    } catch (_) {}
 
     const loadTime = Date.now() - startTime;
     await logger.metric("page_load_time", loadTime, shop, { 
@@ -52,16 +115,8 @@ export const loader = async ({ request }) => {
     return json({
       shop: session.shop,
       accessToken: session.accessToken,
-      connectionStatus: existingConnection?.status || "ready",
-      connectionData: existingConnection ? {
-        connectionId: existingConnection.connectionId,
-        sourceId: existingConnection.sourceId,
-        destinationId: existingConnection.destinationId,
-        jobId: existingConnection.jobId,
-        errorMessage: existingConnection.errorMessage,
-        lastSyncAt: existingConnection.lastSyncAt,
-        syncCount: existingConnection.syncCount,
-      } : null,
+      connectionStatus: status,
+      connectionData: connectionPayload,
     });
   } catch (error) {
     await logger.error("Failed to load app index", {
@@ -297,12 +352,12 @@ export default function Index() {
       case "connecting":
         return <Badge status="attention">Connecting...</Badge>;
       case "connected":
-        return <Badge status="success">Successfully Connected</Badge>;
+        return <Badge status="success">Connected</Badge>;
       case "failed":
         return <Badge status="critical">Connection Failed</Badge>;
       case "ready":
       default:
-        return <Badge status="info">Ready to Connect</Badge>;
+        return <Badge status="attention">Ready to Connect</Badge>;
     }
   };
 
@@ -409,18 +464,20 @@ export default function Index() {
             )}
 
             {/* Connection Form */}
-            <Form method="post">
-              <input type="hidden" name="action" value={getButtonAction()} />
-              <Button
-                variant="primary"
-                submit
-                loading={isConnecting}
-                disabled={isConnecting}
-              >
-                {isConnecting && <Spinner size="small" accessibilityLabel="Connecting" />}
-                {getButtonText()}
-              </Button>
-            </Form>
+            {connectionStatus !== "connected" && (
+              <Form method="post">
+                <input type="hidden" name="action" value={getButtonAction()} />
+                <Button
+                  variant="primary"
+                  submit
+                  loading={isConnecting}
+                  disabled={isConnecting}
+                >
+                  {isConnecting && <Spinner size="small" accessibilityLabel="Connecting" />}
+                  {getButtonText()}
+                </Button>
+              </Form>
+            )}
           </Card>
         </Layout.Section>
 
@@ -429,18 +486,7 @@ export default function Index() {
           {renderConnectionDetails()}
         </Layout.Section>
 
-        {/* Shop Information */}
-        <Layout.Section>
-          <Card>
-            <Text variant="headingMd" as="h3">Shop Information</Text>
-            <Box paddingBlockStart="200">
-              <Text as="p"><strong>Shop Domain:</strong> {shop}</Text>
-              <Text as="p" tone="subdued">
-                This information is used to configure your data sync settings.
-              </Text>
-            </Box>
-          </Card>
-        </Layout.Section>
+        {/* Shop Information removed as per new requirements */}
       </Layout>
     </Page>
   );
