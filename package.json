@@ -22,16 +22,16 @@
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "@prisma/extension-accelerate": "^1.0.0",
-    "@remix-run/node": "2.9.1",
-    "@remix-run/react": "2.9.1",
-    "@remix-run/serve": "2.9.1",
-    "@remix-run/dev": "2.9.1",
+    "@remix-run/node": "2.8.1",
+    "@remix-run/react": "2.8.1",
+    "@remix-run/serve": "2.8.1",
+    "@remix-run/dev": "2.8.1",
     "@shopify/app-bridge-react": "^4.1.6",
     "@shopify/polaris": "^13.9.5",
     "@shopify/shopify-app-remix": "^2.8.0",
     "@shopify/shopify-app-session-storage-prisma": "^5.0.0",
     "@shopify/cli": "^3.81.2",
-    "@vercel/remix": "2.9.1",
+    "@vercel/remix": "2.8.1-patch.2",
     "isbot": "^5.1.0",
     "prisma": "^5.22.0",
     "react": "^18.2.0",
@@ -53,8 +53,8 @@
   },
   "author": "hassanmuhammadyounas",
   "overrides": {
-    "@remix-run/dev": "2.9.1",
-    "@remix-run/node": "2.9.1",
+    "@remix-run/dev": "2.8.1",
+    "@remix-run/node": "2.8.1",
     "vite": "^5.1.0"
   }
 }
