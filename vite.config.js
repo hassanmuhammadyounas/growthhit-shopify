@@ -58,6 +58,7 @@ export default defineConfig({
   ],
   build: {
     assetsInlineLimit: 0,
+    target: "node20", // Target Node 20+ for modern syntax support
     rollupOptions: {
       output: {
         manualChunks: {
@@ -69,5 +70,11 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ["@shopify/app-bridge-react", "@shopify/polaris"],
+    esbuildOptions: {
+      target: "node20", // Ensure esbuild targets Node 20+
+    },
+  },
+  esbuild: {
+    target: "node20", // Global esbuild target
   },
 });
