@@ -24,6 +24,7 @@ export default async function handleRequest(
   responseHeaders,
   remixContext,
 ) {
+  console.log('[Req]', request.method, request.url);
   addDocumentResponseHeaders(request, responseHeaders);
   const userAgent = request.headers.get("user-agent");
   const callbackName = isbot(userAgent ?? "") ? "onAllReady" : "onShellReady";
