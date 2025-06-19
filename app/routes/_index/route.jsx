@@ -1,6 +1,6 @@
 import { json, redirect } from "@remix-run/node";
 import { Form, useLoaderData } from "@remix-run/react";
-import { login } from "../../shopify.server";
+import { login, authWithLog } from "../../shopify.server";
 import styles from "./styles.module.css";
 import { boundary } from "@shopify/shopify-app-remix/server";
 import { useRouteError } from "@remix-run/react";
@@ -8,15 +8,20 @@ import { useRouteError } from "@remix-run/react";
 export const loader = async ({ request }) => {
   const url = new URL(request.url);
   const shop = url.searchParams.get("shop");
-  
-  console.log('[_index] Loader called', {
-    shop,
-    embedded: url.searchParams.get("embedded"),
-    url: request.url,
-  });
+  const embedded = url.searchParams.get("embedded");
+  const host = url.searchParams.get("host");
+  console.log('[_index] Loader called', { shop, embedded, host, url: request.url });
 
+  // New embedded auth strategy: detect admin iframe context
+  if (embedded && host) {
+    console.log('[_index] Embedded context detected, authenticating session');
+    await authWithLog(request);
+    console.log('[_index] Authentication successful, redirecting to /app');
+    return redirect('/app');
+  }
+
+  // Legacy OAuth installation for non-embedded flows
   if (shop) {
-    // Always trigger OAuth flow for shops without valid sessions
     console.log('[_index] Shop parameter found, initiating OAuth flow');
     throw await login(request);
   }
