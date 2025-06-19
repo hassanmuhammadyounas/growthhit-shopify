@@ -8,6 +8,7 @@ import {
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import { restResources } from "@shopify/shopify-api/rest/admin/2023-04";
 import prisma from "./db.server";
+import { LogSeverity } from "@shopify/shopify-api";
 
 // Validate required environment variables
 const requiredEnvVars = {
@@ -44,6 +45,7 @@ const shopify = shopifyApp({
   sessionStorage: new PrismaSessionStorage(prisma),
   isEmbeddedApp: true,
   distribution: AppDistribution.AppStore,
+  logger: { level: LogSeverity.Debug },
   future: {
     unstable_newEmbeddedAuthStrategy: true,
     removeRest: true,
