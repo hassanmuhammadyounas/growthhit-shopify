@@ -40,6 +40,12 @@ export const loader = async ({ request }) => {
     ------------------------------------------------------------------*/
 
     // Check Airbyte connection status
+    console.log("[STATUS_CHECK] Starting Airbyte status check", {
+      requestId,
+      shop: session.shop,
+      endpoint: "https://us-central1-growthhit-7be7b.cloudfunctions.net/airbyte-handler"
+    });
+    
     await logger.info("Starting Airbyte status check", {
       requestId,
       shop: session.shop,
@@ -63,23 +69,38 @@ export const loader = async ({ request }) => {
         }
       );
       
-      await logger.info("Airbyte status check response received", {
-        requestId,
-        shop: session.shop,
-        status: airbyteResp.status,
-        ok: airbyteResp.ok,
-        duration: Date.now() - apiStart
-      });
-    } catch (error) {
-      fetchError = error;
-      await logger.error("Airbyte status check fetch failed", {
-        requestId,
-        shop: session.shop,
-        error: error.message,
-        stack: error.stack,
-        duration: Date.now() - apiStart
-      });
-    }
+             console.log("[STATUS_CHECK] Response received", {
+         requestId,
+         shop: session.shop,
+         status: airbyteResp.status,
+         ok: airbyteResp.ok,
+         duration: Date.now() - apiStart
+       });
+       
+       await logger.info("Airbyte status check response received", {
+         requestId,
+         shop: session.shop,
+         status: airbyteResp.status,
+         ok: airbyteResp.ok,
+         duration: Date.now() - apiStart
+       });
+         } catch (error) {
+       fetchError = error;
+       console.log("[STATUS_CHECK] Fetch failed", {
+         requestId,
+         shop: session.shop,
+         error: error.message,
+         duration: Date.now() - apiStart
+       });
+       
+       await logger.error("Airbyte status check fetch failed", {
+         requestId,
+         shop: session.shop,
+         error: error.message,
+         stack: error.stack,
+         duration: Date.now() - apiStart
+       });
+     }
 
     let status = "ready";
     let connectionPayload = null;
@@ -88,13 +109,21 @@ export const loader = async ({ request }) => {
       try {
         const result = await airbyteResp.json();
         
-        await logger.info("Airbyte status check result", {
-          requestId,
-          shop: session.shop,
-          hasConnectionId: !!result?.connection_id,
-          resultKeys: Object.keys(result || {}),
-          result: result
-        });
+                 console.log("[STATUS_CHECK] JSON result", {
+           requestId,
+           shop: session.shop,
+           hasConnectionId: !!result?.connection_id,
+           resultKeys: Object.keys(result || {}),
+           result: result
+         });
+         
+         await logger.info("Airbyte status check result", {
+           requestId,
+           shop: session.shop,
+           hasConnectionId: !!result?.connection_id,
+           resultKeys: Object.keys(result || {}),
+           result: result
+         });
 
         if (result?.connection_id) {
           status = "connected";
@@ -146,12 +175,20 @@ export const loader = async ({ request }) => {
       });
     }
 
-    await logger.info("Final connection status determined", {
-      requestId,
-      shop: session.shop,
-      status,
-      hasPayload: !!connectionPayload
-    });
+         console.log("[STATUS_CHECK] Final status determined", {
+       requestId,
+       shop: session.shop,
+       status,
+       hasPayload: !!connectionPayload,
+       connectionPayload
+     });
+     
+     await logger.info("Final connection status determined", {
+       requestId,
+       shop: session.shop,
+       status,
+       hasPayload: !!connectionPayload
+     });
 
     await logger.apiCall(
       "POST",
@@ -459,7 +496,8 @@ export default function Index() {
       return errorMsg || "Connection to GrowthHit Dashboard failed. Please try again.";
     }
     
-    return "Ready to connect your Shopify store with GrowthHit Dashboard.";
+    // For "ready" status, return empty string to avoid duplicate text
+    return "";
   };
 
   const getButtonText = () => {
