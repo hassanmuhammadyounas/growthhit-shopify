@@ -3,7 +3,7 @@
 client_id = "ad0eed26825cfa5592bfb7f05dc18fdc"
 name = "GrowthHit"
 handle = "growthhit"
-application_url = "https://growthhit-shopify-git-main-growth-hit.vercel.app"
+application_url = "https://app.growthhit.com"
 embedded = true
 
 [build]
@@ -17,9 +17,9 @@ scopes = "read_orders,read_products"
 
 [auth]
 redirect_urls = [
-  "https://growthhit-shopify-git-main-growth-hit.vercel.app/auth/callback",
-  "https://growthhit-shopify-git-main-growth-hit.vercel.app/auth/shopify/callback",
-  "https://growthhit-shopify-git-main-growth-hit.vercel.app/api/auth/callback"
+  "https://app.growthhit.com/auth/callback",
+  "https://app.growthhit.com/auth/shopify/callback",
+  "https://app.growthhit.com/api/auth/callback"
 ]
 
 [webhooks]
@@ -27,7 +27,7 @@ api_version = "2025-01"
 
 [[webhooks.subscriptions]]
 topics = ["app/uninstalled"]
-uri = "https://growthhit-shopify-git-main-growth-hit.vercel.app/webhooks"
+uri = "https://app.growthhit.com/webhooks"
 
 [pos]
 embedded = false

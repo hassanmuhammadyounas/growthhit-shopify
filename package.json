@@ -6,10 +6,14 @@
     "dev": "shopify app dev",
     "shopify": "shopify",
     "prisma": "prisma",
-    "setup": "prisma generate && prisma migrate deploy",
-    "postinstall": "prisma generate",
+    "setup": "prisma generate --no-engine && prisma migrate deploy",
+    "postinstall": "prisma generate --no-engine",
     "lint": "eslint --cache --cache-location ./node_modules/.cache/eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:studio": "prisma studio",
+    "db:migrate": "prisma migrate dev",
+    "db:reset": "prisma migrate reset",
+    "db:test": "node -e \"import('./app/db.server.js').then(m => m.default.$queryRaw\\`SELECT 1 as test\\`).then(() => console.log('✅ Database connected')).catch(err => console.error('❌ Error:', err.message))\""
   },
   "type": "module",
   "engines": {

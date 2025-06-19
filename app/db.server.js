@@ -52,7 +52,8 @@ if (process.env.NODE_ENV === "production") {
   dbLog("info", "Initializing Prisma Client for development");
   
   if (!global.prismaGlobal) {
-    global.prismaGlobal = new PrismaClient({
+    // Create base client first
+    const baseClient = new PrismaClient({
       log: [
         { emit: 'event', level: 'query' },
         { emit: 'event', level: 'error' },
@@ -61,36 +62,49 @@ if (process.env.NODE_ENV === "production") {
       ],
     });
 
-    // Development logging - all events
-    global.prismaGlobal.$on('query', (e) => {
-      dbLog("info", "Database query", {
-        query: e.query,
-        params: e.params,
-        duration: `${e.duration}ms`,
-        target: e.target
-      });
+    // Set up event listeners on base client
+    baseClient.$on('query', (e) => {
+      // Log slow queries directly in the event handler
+      if (e.duration > 500) {
+        dbLog("warn", "Slow query detected", {
+          query: e.query,
+          params: e.params,
+          duration: `${e.duration}ms`,
+          target: e.target
+        });
+      } else {
+        dbLog("info", "Database query", {
+          query: e.query,
+          params: e.params,
+          duration: `${e.duration}ms`,
+          target: e.target
+        });
+      }
     });
 
-    global.prismaGlobal.$on('error', (e) => {
+    baseClient.$on('error', (e) => {
       dbLog("error", "Database error", {
         target: e.target,
         message: e.message
       });
     });
 
-    global.prismaGlobal.$on('warn', (e) => {
+    baseClient.$on('warn', (e) => {
       dbLog("warn", "Database warning", {
         target: e.target,
         message: e.message
       });
     });
 
-    global.prismaGlobal.$on('info', (e) => {
+    baseClient.$on('info', (e) => {
       dbLog("info", "Database info", {
         target: e.target,
         message: e.message
       });
     });
+
+    // Apply Accelerate extension after setting up listeners
+    global.prismaGlobal = baseClient.$extends(withAccelerate());
   }
   
   prisma = global.prismaGlobal;
@@ -108,7 +122,7 @@ async function connectWithRetry() {
     dbLog("info", "Successfully connected to database", {
       attempt: connectionAttempts,
       environment: process.env.NODE_ENV,
-      accelerate: process.env.NODE_ENV === "production"
+      accelerate: true
     });
   } catch (error) {
     dbLog("error", `Database connection failed (attempt ${connectionAttempts})`, {
@@ -127,38 +141,6 @@ async function connectWithRetry() {
     }
   }
 }
-
-// Enhanced middleware for query monitoring
-prisma.$use(async (params, next) => {
-  const start = Date.now();
-  
-  try {
-    const result = await next(params);
-    const duration = Date.now() - start;
-    
-    // Log slow queries (> 1000ms)
-    if (duration > 1000) {
-      dbLog("warn", "Slow query detected", {
-        model: params.model,
-        action: params.action,
-        duration: `${duration}ms`
-      });
-    }
-    
-    return result;
-  } catch (error) {
-    const duration = Date.now() - start;
-    
-    dbLog("error", "Query failed", {
-      model: params.model,
-      action: params.action,
-      duration: `${duration}ms`,
-      error: error.message
-    });
-    
-    throw error;
-  }
-});
 
 // Initialize connection
 connectWithRetry();
