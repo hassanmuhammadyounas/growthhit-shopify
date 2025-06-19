@@ -3,13 +3,5 @@
   "routes": [
     { "handle": "filesystem" },
     { "src": "/.*", "dest": "/" }
-  ],
-  "functions": {
-    "build/index.js": {
-      "maxDuration": 60
-    }
-  },
-  "env": {
-    "NODE_OPTIONS": "--max-old-space-size=1024"
-  }
+  ]
 } 

@@ -31,8 +31,6 @@ if (process.env.NODE_ENV === "production") {
       { emit: 'event', level: 'warn' },
       { emit: 'event', level: 'info' },
     ],
-    // Add query timeout for production
-    datasourceUrl: process.env.DATABASE_URL + "?connection_limit=10&pool_timeout=20",
   }).$extends(withAccelerate());
 
   // Safely attach production event listeners (Accelerate client may not support $on)
@@ -50,17 +48,6 @@ if (process.env.NODE_ENV === "production") {
         target: e.target,
         message: e.message
       });
-    });
-
-    // Log slow queries in production
-    prisma.$on('query', (e) => {
-      if (e.duration > 2000) {
-        dbLog("warn", "Slow query in production", {
-          query: e.query,
-          duration: `${e.duration}ms`,
-          target: e.target
-        });
-      }
     });
   } else {
     dbLog("warn", "Prisma Accelerate client does not support $on event listeners – skipping error/warn handlers");
@@ -131,64 +118,41 @@ if (process.env.NODE_ENV === "production") {
 // Add connection error handling with retries
 let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 3;
-let isConnecting = false;
-let connectionPromise = null;
 
 async function connectWithRetry() {
-  if (isConnecting && connectionPromise) {
-    return connectionPromise;
-  }
-  
-  isConnecting = true;
   connectionAttempts++;
   
-  connectionPromise = (async () => {
-    try {
-      const start = Date.now();
-      dbLog("info", "Connecting to database...");
-      await prisma.$connect();
-      const duration = Date.now() - start;
-      dbLog("info", `Connected in ${duration}ms`);
-      dbLog("info", "Successfully connected to database", {
-        attempt: connectionAttempts,
-        environment: process.env.NODE_ENV,
-        accelerate: true
-      });
-      isConnecting = false;
-      return true;
-    } catch (error) {
-      dbLog("error", `Database connection failed (attempt ${connectionAttempts})`, {
-        error: error.message,
-        code: error.code,
-        attempt: connectionAttempts,
-        maxAttempts: MAX_CONNECTION_ATTEMPTS
-      });
+  try {
+    const start = Date.now();
+    dbLog("info", "Connecting to database...");
+    await prisma.$connect();
+    const duration = Date.now() - start;
+    dbLog("info", `Connected in ${duration}ms`);
+    dbLog("info", "Successfully connected to database", {
+      attempt: connectionAttempts,
+      environment: process.env.NODE_ENV,
+      accelerate: true
+    });
+  } catch (error) {
+    dbLog("error", `Database connection failed (attempt ${connectionAttempts})`, {
+      error: error.message,
+      code: error.code,
+      attempt: connectionAttempts,
+      maxAttempts: MAX_CONNECTION_ATTEMPTS
+    });
 
-      if (connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
-        dbLog("info", `Retrying database connection in 2 seconds...`);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        isConnecting = false;
-        connectionPromise = null;
-        return connectWithRetry();
-      } else {
-        dbLog("error", "Max connection attempts exceeded. Database operations may fail.");
-        isConnecting = false;
-        // Don't exit process in production - let the app continue with degraded functionality
-        if (process.env.NODE_ENV !== "production") {
-          process.exit(1);
-        }
-        return false;
-      }
+    if (connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
+      dbLog("info", `Retrying database connection in 2 seconds...`);
+      setTimeout(connectWithRetry, 2000);
+    } else {
+      dbLog("error", "Max connection attempts exceeded. Exiting process.");
+      process.exit(1);
     }
-  })();
-  
-  return connectionPromise;
+  }
 }
 
 // Initialize connection
-connectWithRetry().catch(error => {
-  dbLog("error", "Failed to initialize database connection", { error: error.message });
-});
+connectWithRetry();
 
 // Graceful shutdown handling
 process.on('beforeExit', async () => {
@@ -207,16 +171,5 @@ process.on('SIGTERM', async () => {
   await prisma.$disconnect();
   process.exit(0);
 });
-
-// Add database health check
-export async function checkDatabaseHealth() {
-  try {
-    await prisma.$queryRaw`SELECT 1 as health_check`;
-    return { healthy: true, message: "Database is healthy" };
-  } catch (error) {
-    dbLog("warn", "Database health check failed", { error: error.message });
-    return { healthy: false, message: error.message };
-  }
-}
 
 export default prisma;
