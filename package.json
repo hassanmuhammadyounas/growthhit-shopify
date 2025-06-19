@@ -15,7 +15,7 @@
     "db:studio": "prisma studio",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
-    "db:test": "node -e \"import('./app/db.server.js').then(m => m.default.$queryRaw\`SELECT 1 as test\`).then(() => console.log('✅ Database connected')).catch(err => console.error('❌ Error:', err.message))\"",
+    "db:test": "node -e \"import('./app/db.server.js').then(m => m.default.$queryRaw\\`SELECT 1 as test\\`).then(() => console.log('✅ Database connected')).catch(err => console.error('❌ Error:', err.message))\"",
     "migrate": "prisma migrate deploy"
   },
   "type": "module",
