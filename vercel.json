@@ -1,16 +1,10 @@
 {
-    "buildCommand": "npm run build",
-    "outputDirectory": "build/client",
-    "functions": {
-      "server.js": {
-        "runtime": "@vercel/node@3.2.22",
-        "includeFiles": "build/**"
-      }
-    },
-    "rewrites": [
-      {
-        "source": "/(.*)",
-        "destination": "/server.js"
-      }
-    ]
-  }
+  "version": 2,
+  "builds": [
+    { "src": "package.json", "use": "@vercel/remix" }
+  ],
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "/.*", "dest": "/" }
+  ]
+} 

@@ -2,9 +2,10 @@
   "name": "growthhit",
   "private": true,
   "scripts": {
-    "build": "vite build",
+    "build": "remix vite:build",
     "dev": "shopify app dev",
-    "start": "remix-serve build/server/index.js",
+    "start": "remix-serve build",
+    "postbuild": "prisma generate --no-engine",
     "shopify": "shopify",
     "prisma": "prisma",
     "setup": "prisma generate --no-engine && prisma migrate deploy",
