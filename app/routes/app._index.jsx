@@ -534,12 +534,6 @@ export default function Index() {
             <Text as="p"><strong>Source ID:</strong> {connectionData.sourceId}</Text>
             <Text as="p"><strong>Destination ID:</strong> {connectionData.destinationId}</Text>
             <Text as="p"><strong>Job ID:</strong> {connectionData.jobId}</Text>
-            {connectionData.lastSyncAt && (
-              <Text as="p"><strong>Last Sync:</strong> {new Date(connectionData.lastSyncAt).toLocaleString()}</Text>
-            )}
-            {connectionData.syncCount && (
-              <Text as="p"><strong>Total Syncs:</strong> {connectionData.syncCount}</Text>
-            )}
           </Box>
         </Card>
       );
