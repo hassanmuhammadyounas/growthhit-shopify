@@ -26,6 +26,7 @@
     "@remix-run/react": "^2.16.1",
     "@remix-run/serve": "^2.16.1",
     "@remix-run/vercel": "^1.19.3",
+    "@remix-run/dev": "^2.16.1",
     "@shopify/app-bridge-react": "^4.1.6",
     "@shopify/polaris": "^13.9.5",
     "@shopify/shopify-app-remix": "^2.8.0",
@@ -39,7 +40,6 @@
     "zod": "^3.22.0"
   },
   "devDependencies": {
-    "@remix-run/dev": "^2.16.1",
     "@shopify/api-codegen-preset": "^1.1.1",
     "@types/node": "^22.2.0",
     "@types/react": "^18.2.37",
