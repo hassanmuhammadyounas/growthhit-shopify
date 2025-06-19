@@ -123,7 +123,7 @@ async function connectWithRetry() {
     dbLog("info", "Successfully connected to database", {
       attempt: connectionAttempts,
       environment: process.env.NODE_ENV,
-      accelerate: true
+      accelerate: process.env.NODE_ENV !== "production"
     });
   } catch (error) {
     dbLog("error", `Database connection failed (attempt ${connectionAttempts})`, {
