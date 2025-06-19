@@ -33,3 +33,15 @@ export const unauthenticated = shopify.unauthenticated;
 export const login = shopify.login;
 export const registerWebhooks = shopify.registerWebhooks;
 export const sessionStorage = shopify.sessionStorage;
+
+// Helper that wraps authenticate.admin with timing logs
+export async function authWithLog(request) {
+  const t0 = Date.now();
+  const result = await authenticate.admin(request);
+  console.log("[auth] authenticate.admin finished", {
+    ms: Date.now() - t0,
+    path: new URL(request.url).pathname,
+    shop: result?.session?.shop || null,
+  });
+  return result;
+}

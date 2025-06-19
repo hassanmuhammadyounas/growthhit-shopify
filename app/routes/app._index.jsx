@@ -13,7 +13,7 @@ import {
   Box,
   Divider,
 } from "@shopify/polaris";
-import { authenticate } from "../shopify.server";
+import { authWithLog } from "../shopify.server";
 import prisma from "../db.server";
 import { logger, airbyteLogger, Logger } from "../utils/logger.server";
 
@@ -23,8 +23,9 @@ export const loader = async ({ request }) => {
   let shop = null;
 
   try {
-    const { session } = await authenticate.admin(request);
+    const { session } = await authWithLog(request);
     shop = session.shop;
+    console.log('[loader] /app index', { url: request.url, shop: session.shop });
 
     await logger.info("App index loaded", { 
       requestId,
@@ -79,7 +80,7 @@ export const action = async ({ request }) => {
   let shop = null;
 
   try {
-    const { session } = await authenticate.admin(request);
+    const { session } = await authWithLog(request);
     shop = session.shop;
     
     const formData = await request.formData();

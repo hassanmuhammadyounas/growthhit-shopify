@@ -123,7 +123,11 @@ async function connectWithRetry() {
   connectionAttempts++;
   
   try {
+    const start = Date.now();
+    dbLog("info", "Connecting to database...");
     await prisma.$connect();
+    const duration = Date.now() - start;
+    dbLog("info", `Connected in ${duration}ms`);
     dbLog("info", "Successfully connected to database", {
       attempt: connectionAttempts,
       environment: process.env.NODE_ENV,
