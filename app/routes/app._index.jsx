@@ -502,10 +502,7 @@ export default function Index() {
     }
     
     if (connectionStatus === "connected") {
-      const syncInfo = connectionData?.lastSyncAt 
-        ? ` Last sync: ${new Date(connectionData.lastSyncAt).toLocaleString()}. Total syncs: ${connectionData.syncCount || 0}.`
-        : "";
-      return `Your Shopify store is successfully connected to GrowthHit Dashboard. Data syncing is active.${syncInfo}`;
+      return `Your Shopify store is successfully connected to GrowthHit Dashboard. Data syncing is active.`;
     }
     
     if (connectionStatus === "failed") {
