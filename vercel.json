@@ -1,8 +1,5 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "package.json", "use": "@vercel/remix" }
-  ],
   "routes": [
     { "handle": "filesystem" },
     { "src": "/.*", "dest": "/" }
