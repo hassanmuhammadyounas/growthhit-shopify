@@ -112,8 +112,10 @@ export const loader = async ({ request }) => {
                  console.log("[STATUS_CHECK] JSON result", {
            requestId,
            shop: session.shop,
-           hasConnectionId: !!result?.connection_id,
+           hasConnectionId: !!result?.details?.connection_id,
+           hasDetails: !!result?.details,
            resultKeys: Object.keys(result || {}),
+           detailsKeys: result?.details ? Object.keys(result.details) : [],
            result: result
          });
          
@@ -125,30 +127,45 @@ export const loader = async ({ request }) => {
            result: result
          });
 
-        if (result?.connection_id) {
-          status = "connected";
-          connectionPayload = {
-            connectionId: result.connection_id,
-            sourceId: result.source_id,
-            destinationId: result.destination_id,
-            jobId: result.job_id,
-            lastSyncAt: result.last_sync_at ? new Date(result.last_sync_at) : null,
-            syncCount: result.sync_count || 0,
-          };
-          
-          await logger.info("Connection detected as connected", {
-            requestId,
-            shop: session.shop,
-            connectionId: result.connection_id,
-            syncCount: result.sync_count || 0
-          });
-        } else {
-          await logger.info("No connection_id found in response - status remains ready", {
-            requestId,
-            shop: session.shop,
-            result: result
-          });
-        }
+                 // Check if connection exists - it's nested under 'details'
+         if (result?.details?.connection_id) {
+           status = "connected";
+           connectionPayload = {
+             connectionId: result.details.connection_id,
+             sourceId: result.details.source_id,
+             destinationId: result.details.destination_id,
+             jobId: result.details.job_id,
+             lastSyncAt: result.details.last_sync_at ? new Date(result.details.last_sync_at) : new Date(),
+             syncCount: result.details.sync_count || 1,
+           };
+           
+           console.log("[STATUS_CHECK] Connection detected as CONNECTED!", {
+             requestId,
+             shop: session.shop,
+             connectionId: result.details.connection_id,
+             syncCount: result.details.sync_count || 1
+           });
+           
+           await logger.info("Connection detected as connected", {
+             requestId,
+             shop: session.shop,
+             connectionId: result.details.connection_id,
+             syncCount: result.details.sync_count || 1
+           });
+         } else {
+           console.log("[STATUS_CHECK] No connection_id found in details - status remains ready", {
+             requestId,
+             shop: session.shop,
+             hasDetails: !!result?.details,
+             result: result
+           });
+           
+           await logger.info("No connection_id found in response - status remains ready", {
+             requestId,
+             shop: session.shop,
+             result: result
+           });
+         }
       } catch (jsonError) {
         await logger.error("Failed to parse Airbyte response JSON", {
           requestId,
