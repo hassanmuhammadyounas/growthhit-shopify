@@ -1,18 +1,16 @@
 {
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/node",
-      "config": {
-        "installCommand": "npm install",
-        "buildCommand": "npm run build"
+    "buildCommand": "npm run build",
+    "outputDirectory": "build/client",
+    "functions": {
+      "server.js": {
+        "runtime": "@vercel/node@3.2.22",
+        "includeFiles": "build/**"
       }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "api/index.js"
-    }
-  ]
-} 
+    },
+    "rewrites": [
+      {
+        "source": "/(.*)",
+        "destination": "/server.js"
+      }
+    ]
+  }
