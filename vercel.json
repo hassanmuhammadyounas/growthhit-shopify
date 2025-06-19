@@ -1,23 +1,25 @@
 {
   "buildCommand": "npm run build",
-  "routes": [
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/api/index.js"
-    }
-  ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
         {
-          "key": "X-Frame-Options",
-          "value": "ALLOWALL"
+          "key": "Content-Security-Policy",
+          "value": "frame-ancestors 'self' https://*.myshopify.com https://admin.shopify.com;"
         }
       ]
     }
-  ]
+  ],
+  "rewrites": [
+    {
+      "source": "/:path((?!api/|build/|favicon\\.ico).*)",
+      "destination": "/api/index.js"
+    }
+  ],
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 30
+    }
+  }
 } 
