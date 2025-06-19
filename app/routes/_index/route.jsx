@@ -1,37 +1,47 @@
-import { redirect } from "@remix-run/node";
+import { json, redirect } from "@remix-run/node";
 import { Form, useLoaderData } from "@remix-run/react";
-import { login, sessionStorage } from "../../shopify.server";
+import { login, authenticate } from "../../shopify.server";
 import styles from "./styles.module.css";
 
 export const loader = async ({ request }) => {
   const url = new URL(request.url);
-  console.log('[_index] loader called', { url: request.url, searchParams: url.searchParams.toString() });
-
   const shop = url.searchParams.get("shop");
+  const embedded = url.searchParams.get("embedded");
+  
+  console.log('[_index] Loader called', {
+    shop,
+    embedded,
+    url: request.url,
+  });
 
   if (shop) {
-    // Check if the app is already installed by looking for an offline session.
-    const sessionId = `offline_${shop}`;
-    const session = await sessionStorage.loadSession(sessionId);
-    
-    // If a session exists, the app is installed. Redirect to the app's main page.
-    if (session) {
-      console.log('[_index] Found existing session, redirecting to /app');
-      // The search params are preserved to carry over the `host` and other Shopify data.
-      throw redirect(`/app?${url.searchParams.toString()}`);
-    } else {
-      // No session found, this is a new install.
-      // Trigger the OAuth flow, which will throw a redirect response.
-      console.log('[_index] No session found, redirecting to login to start OAuth flow...');
-      await login(request);
+    try {
+      // Try to authenticate - if session exists, redirect to app
+      const { session } = await authenticate.admin(request);
       
-      // This line is technically unreachable because login() always throws a redirect.
-      return null;
+      if (session) {
+        console.log('[_index] Valid session found, redirecting to app', {
+          shop: session.shop,
+          sessionId: session.id
+        });
+        
+        // Preserve all query params when redirecting
+        return redirect(`/app?${url.searchParams.toString()}`);
+      }
+    } catch (error) {
+      // No valid session, proceed with login
+      console.log('[_index] No valid session, initiating OAuth flow', {
+        shop,
+        error: error.message
+      });
     }
+
+    // Initiate OAuth flow
+    throw await login(request);
   }
 
-  // For requests that don't have a shop param, we show the main marketing page with a login form.
-  return { showForm: Boolean(login) };
+  // No shop parameter - show marketing page
+  return json({ showForm: true });
 };
 
 export default function App() {
