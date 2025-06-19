@@ -1,0 +1,1 @@
+# GrowthHit Shopify App
