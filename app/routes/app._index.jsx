@@ -39,6 +39,7 @@ export const loader = async ({ request }) => {
         saved IDs and doesn't create a new one.)                         
     ------------------------------------------------------------------*/
 
+    console.log('[airbyte-status-check] Initiating status request');
     const apiStart = Date.now();
     const airbyteResp = await fetch(
       "https://us-central1-growthhit-7be7b.cloudfunctions.net/airbyte-handler",
@@ -50,13 +51,19 @@ export const loader = async ({ request }) => {
           api_password: session.accessToken,
         }),
       }
-    ).catch(() => null);
+    ).catch((err) => {
+      console.error('[airbyte-status-check] Network error', err);
+      return null;
+    });
+
+    console.log('[airbyte-status-check] Response object', airbyteResp && {status: airbyteResp.status});
 
     let status = "ready";
     let connectionPayload = null;
 
     if (airbyteResp && airbyteResp.ok) {
       const result = await airbyteResp.json();
+      console.log('[airbyte-status-check] Success payload', result);
       if (result?.connection_id) {
         status = "connected";
         connectionPayload = {
@@ -70,6 +77,7 @@ export const loader = async ({ request }) => {
       }
     } else if (airbyteResp) {
       status = "failed";
+      console.warn('[airbyte-status-check] Handler returned non-200', airbyteResp.status);
     }
 
     await logger.apiCall(
@@ -378,7 +386,7 @@ export default function Index() {
       return errorMsg || "Connection to Airbyte failed. Please try again.";
     }
     
-    return "Connect your Shopify store to Airbyte for automated data syncing to BigQuery.";
+    return "Connect your Shopify store with GrowthHit Dashboard — setup takes about 60 seconds.";
   };
 
   const getButtonText = () => {
@@ -421,13 +429,13 @@ export default function Index() {
           <Card>
             <Box paddingBlockEnd="200">
               <Text variant="headingLg" as="h2">
-                GrowthHit Analytics Integration
+                GrowthHit Dashboard Integration
               </Text>
             </Box>
             
             <Box paddingBlockEnd="200">
               <Text as="p">
-                Connect your Shopify store to sync data automatically with BigQuery through Airbyte.
+                Connect your Shopify store with GrowthHit Dashboard — setup takes about 60&nbsp;seconds to complete.
               </Text>
             </Box>
 
