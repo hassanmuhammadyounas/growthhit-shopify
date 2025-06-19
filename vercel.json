@@ -16,10 +16,5 @@
       "source": "/:path((?!api/|build/|favicon\\.ico).*)",
       "destination": "/api/index.js"
     }
-  ],
-  "functions": {
-    "api/index.js": {
-      "maxDuration": 30
-    }
-  }
+  ]
 } 
