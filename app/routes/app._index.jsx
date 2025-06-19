@@ -39,46 +39,119 @@ export const loader = async ({ request }) => {
         saved IDs and doesn't create a new one.)                         
     ------------------------------------------------------------------*/
 
-    console.log('[airbyte-status-check] Initiating status request');
-    const apiStart = Date.now();
-    const airbyteResp = await fetch(
-      "https://us-central1-growthhit-7be7b.cloudfunctions.net/airbyte-handler",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          shop: session.shop,
-          api_password: session.accessToken,
-        }),
-      }
-    ).catch((err) => {
-      console.error('[airbyte-status-check] Network error', err);
-      return null;
+    // Check Airbyte connection status
+    await logger.info("Starting Airbyte status check", {
+      requestId,
+      shop: session.shop,
+      endpoint: "https://us-central1-growthhit-7be7b.cloudfunctions.net/airbyte-handler"
     });
 
-    console.log('[airbyte-status-check] Response object', airbyteResp && {status: airbyteResp.status});
+    const apiStart = Date.now();
+    let airbyteResp = null;
+    let fetchError = null;
+
+    try {
+      airbyteResp = await fetch(
+        "https://us-central1-growthhit-7be7b.cloudfunctions.net/airbyte-handler",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            shop: session.shop,
+            api_password: session.accessToken,
+          }),
+        }
+      );
+      
+      await logger.info("Airbyte status check response received", {
+        requestId,
+        shop: session.shop,
+        status: airbyteResp.status,
+        ok: airbyteResp.ok,
+        duration: Date.now() - apiStart
+      });
+    } catch (error) {
+      fetchError = error;
+      await logger.error("Airbyte status check fetch failed", {
+        requestId,
+        shop: session.shop,
+        error: error.message,
+        stack: error.stack,
+        duration: Date.now() - apiStart
+      });
+    }
 
     let status = "ready";
     let connectionPayload = null;
 
     if (airbyteResp && airbyteResp.ok) {
-      const result = await airbyteResp.json();
-      console.log('[airbyte-status-check] Success payload', result);
-      if (result?.connection_id) {
-        status = "connected";
-        connectionPayload = {
-          connectionId: result.connection_id,
-          sourceId: result.source_id,
-          destinationId: result.destination_id,
-          jobId: result.job_id,
-          lastSyncAt: result.last_sync_at ? new Date(result.last_sync_at) : null,
-          syncCount: result.sync_count || 0,
-        };
+      try {
+        const result = await airbyteResp.json();
+        
+        await logger.info("Airbyte status check result", {
+          requestId,
+          shop: session.shop,
+          hasConnectionId: !!result?.connection_id,
+          resultKeys: Object.keys(result || {}),
+          result: result
+        });
+
+        if (result?.connection_id) {
+          status = "connected";
+          connectionPayload = {
+            connectionId: result.connection_id,
+            sourceId: result.source_id,
+            destinationId: result.destination_id,
+            jobId: result.job_id,
+            lastSyncAt: result.last_sync_at ? new Date(result.last_sync_at) : null,
+            syncCount: result.sync_count || 0,
+          };
+          
+          await logger.info("Connection detected as connected", {
+            requestId,
+            shop: session.shop,
+            connectionId: result.connection_id,
+            syncCount: result.sync_count || 0
+          });
+        } else {
+          await logger.info("No connection_id found in response - status remains ready", {
+            requestId,
+            shop: session.shop,
+            result: result
+          });
+        }
+      } catch (jsonError) {
+        await logger.error("Failed to parse Airbyte response JSON", {
+          requestId,
+          shop: session.shop,
+          error: jsonError.message,
+          responseStatus: airbyteResp.status
+        });
+        status = "failed";
       }
     } else if (airbyteResp) {
       status = "failed";
-      console.warn('[airbyte-status-check] Handler returned non-200', airbyteResp.status);
+      await logger.warn("Airbyte status check returned non-OK response", {
+        requestId,
+        shop: session.shop,
+        status: airbyteResp.status,
+        statusText: airbyteResp.statusText
+      });
+    } else if (fetchError) {
+      status = "failed";
+      await logger.error("Airbyte status check completely failed", {
+        requestId,
+        shop: session.shop,
+        error: fetchError.message
+      });
     }
+
+    await logger.info("Final connection status determined", {
+      requestId,
+      shop: session.shop,
+      status,
+      hasPayload: !!connectionPayload
+    });
 
     await logger.apiCall(
       "POST",
@@ -86,7 +159,7 @@ export const loader = async ({ request }) => {
       airbyteResp ? airbyteResp.status : 0,
       Date.now() - apiStart,
       shop,
-      { requestId, status }
+      { requestId, status, fetchError: fetchError?.message }
     );
 
     // Persist the latest status in DB for reference, ignore errors silently
@@ -294,13 +367,13 @@ export const action = async ({ request }) => {
           where: { shop: session.shop },
           update: {
             status: "failed",
-            errorMessage: "Network error occurred while connecting to Airbyte",
+            errorMessage: "Network error occurred while connecting to GrowthHit Dashboard",
             updatedAt: new Date()
           },
           create: {
             shop: session.shop,
             status: "failed",
-            errorMessage: "Network error occurred while connecting to Airbyte",
+            errorMessage: "Network error occurred while connecting to GrowthHit Dashboard",
           }
         });
 
@@ -315,7 +388,7 @@ export const action = async ({ request }) => {
 
         return json({
           success: false,
-          message: "Network error occurred while connecting to Airbyte",
+          message: "Network error occurred while connecting to GrowthHit Dashboard",
           error: error.message,
         });
       }
@@ -371,28 +444,28 @@ export default function Index() {
 
   const getStatusMessage = () => {
     if (connectionStatus === "connecting") {
-      return "Connecting to Airbyte... This may take a few moments.";
+      return "Connecting to GrowthHit Dashboard... This may take a few moments.";
     }
     
     if (connectionStatus === "connected") {
       const syncInfo = connectionData?.lastSyncAt 
         ? ` Last sync: ${new Date(connectionData.lastSyncAt).toLocaleString()}. Total syncs: ${connectionData.syncCount || 0}.`
         : "";
-      return `Your Shopify store is successfully connected to Airbyte. Data syncing is active.${syncInfo}`;
+      return `Your Shopify store is successfully connected to GrowthHit Dashboard. Data syncing is active.${syncInfo}`;
     }
     
     if (connectionStatus === "failed") {
       const errorMsg = actionData?.message || connectionData?.errorMessage;
-      return errorMsg || "Connection to Airbyte failed. Please try again.";
+      return errorMsg || "Connection to GrowthHit Dashboard failed. Please try again.";
     }
     
-    return "Connect your Shopify store with GrowthHit Dashboard — setup takes about 60 seconds.";
+    return "Ready to connect your Shopify store with GrowthHit Dashboard.";
   };
 
   const getButtonText = () => {
     if (isConnecting) return "Connecting...";
     if (connectionStatus === "connected") return "Reconnect";
-    return "Connect to Airbyte";
+    return "Connect to GrowthHit Dashboard";
   };
 
   const getButtonAction = () => {
@@ -435,7 +508,7 @@ export default function Index() {
             
             <Box paddingBlockEnd="200">
               <Text as="p">
-                Connect your Shopify store with GrowthHit Dashboard — setup takes about 60&nbsp;seconds to complete.
+                Connect your Shopify store with GrowthHit Dashboard, setup will take about 60s to complete.
               </Text>
             </Box>
 
