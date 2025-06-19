@@ -13,7 +13,7 @@
   ],
   "rewrites": [
     {
-      "source": "/:path((?!api/|build/|favicon\\.ico).*)",
+      "source": "/((?!api/|build/|favicon.ico).*)",
       "destination": "/api/index.js"
     }
   ]
