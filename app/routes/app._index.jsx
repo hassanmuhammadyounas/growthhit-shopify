@@ -23,9 +23,28 @@ export const loader = async ({ request }) => {
   let shop = null;
 
   try {
-    const { session } = await authWithLog(request);
+    console.log('[loader] Starting /app index', { 
+      url: request.url, 
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+    // Add timeout protection for authentication
+    const authResult = await Promise.race([
+      authWithLog(request),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Auth timeout after 45 seconds')), 45000)
+      )
+    ]);
+
+    const { session } = authResult;
     shop = session.shop;
-    console.log('[loader] /app index', { url: request.url, shop: session.shop });
+    
+    console.log('[loader] Authentication successful', { 
+      shop: session.shop, 
+      requestId,
+      authTime: `${Date.now() - startTime}ms`
+    });
 
     await logger.info("App index loaded", { 
       requestId,
@@ -33,20 +52,47 @@ export const loader = async ({ request }) => {
       userAgent: request.headers.get("user-agent")
     }, request, shop);
 
-    // Check for existing Airbyte connection
-    const existingConnection = await prisma.airbyteConnection.findUnique({
-      where: { shop: session.shop }
-    });
+    // Check for existing Airbyte connection with timeout
+    let existingConnection = null;
+    try {
+      existingConnection = await Promise.race([
+        prisma.airbyteConnection.findUnique({
+          where: { shop: session.shop }
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Database query timeout')), 10000)
+        )
+      ]);
 
-    await logger.database("findUnique", "AirbyteConnection", shop, {
-      requestId,
-      found: !!existingConnection
-    });
+      await logger.database("findUnique", "AirbyteConnection", shop, {
+        requestId,
+        found: !!existingConnection
+      });
+    } catch (dbError) {
+      console.warn('[loader] Database query failed, continuing without connection data', {
+        error: dbError.message,
+        requestId,
+        shop
+      });
+      
+      await logger.warn("Database query timeout", {
+        requestId,
+        error: dbError.message,
+        operation: "findUnique AirbyteConnection"
+      }, request, shop);
+    }
 
     const loadTime = Date.now() - startTime;
     await logger.metric("page_load_time", loadTime, shop, { 
       page: "app_index",
       requestId 
+    });
+
+    console.log('[loader] /app index completed', {
+      shop: session.shop,
+      loadTime: `${loadTime}ms`,
+      requestId,
+      hasConnection: !!existingConnection
     });
 
     return json({
@@ -64,10 +110,21 @@ export const loader = async ({ request }) => {
       } : null,
     });
   } catch (error) {
+    const loadTime = Date.now() - startTime;
+    
+    console.error('[loader] /app index failed', {
+      error: error.message,
+      loadTime: `${loadTime}ms`,
+      requestId,
+      shop,
+      stack: error.stack
+    });
+
     await logger.error("Failed to load app index", {
       requestId,
       error: error.message,
-      stack: error.stack
+      stack: error.stack,
+      loadTime
     }, request, shop);
     
     throw error;

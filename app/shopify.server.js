@@ -48,6 +48,14 @@ const shopify = shopifyApp({
     unstable_newEmbeddedAuthStrategy: true,
     removeRest: true,
   },
+  hooks: {
+    afterAuth: async ({ session }) => {
+      console.log("[shopify] Session created/updated", { 
+        shop: session.shop, 
+        isOnline: session.isOnline 
+      });
+    },
+  },
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
     : {}),
@@ -65,30 +73,24 @@ export const sessionStorage = shopify.sessionStorage;
 // Helper that wraps authenticate.admin with timing logs
 export async function authWithLog(request) {
   const t0 = Date.now();
-  console.log("[auth] Starting authenticate.admin...", { path: new URL(request.url).pathname });
-  
-  // Add timeout to prevent infinite hangs
-  const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error('Authentication timeout after 30 seconds')), 30000);
-  });
+  const url = new URL(request.url);
+  console.log("[auth] Starting authenticate.admin...", { path: url.pathname });
   
   try {
-    const result = await Promise.race([
-      authenticate.admin(request),
-      timeoutPromise
-    ]);
+    const result = await authenticate.admin(request);
     
     console.log("[auth] authenticate.admin finished", {
       ms: Date.now() - t0,
-      path: new URL(request.url).pathname,
+      path: url.pathname,
       shop: result?.session?.shop || null,
     });
     return result;
   } catch (error) {
     console.error("[auth] authenticate.admin failed", {
       ms: Date.now() - t0,
-      path: new URL(request.url).pathname,
-      error: error.message
+      path: url.pathname,
+      error: error.message,
+      stack: error.stack
     });
     throw error;
   }

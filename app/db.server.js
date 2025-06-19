@@ -118,41 +118,64 @@ if (process.env.NODE_ENV === "production") {
 // Add connection error handling with retries
 let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 3;
+let isConnecting = false;
+let connectionPromise = null;
 
 async function connectWithRetry() {
+  if (isConnecting && connectionPromise) {
+    return connectionPromise;
+  }
+  
+  isConnecting = true;
   connectionAttempts++;
   
-  try {
-    const start = Date.now();
-    dbLog("info", "Connecting to database...");
-    await prisma.$connect();
-    const duration = Date.now() - start;
-    dbLog("info", `Connected in ${duration}ms`);
-    dbLog("info", "Successfully connected to database", {
-      attempt: connectionAttempts,
-      environment: process.env.NODE_ENV,
-      accelerate: true
-    });
-  } catch (error) {
-    dbLog("error", `Database connection failed (attempt ${connectionAttempts})`, {
-      error: error.message,
-      code: error.code,
-      attempt: connectionAttempts,
-      maxAttempts: MAX_CONNECTION_ATTEMPTS
-    });
+  connectionPromise = (async () => {
+    try {
+      const start = Date.now();
+      dbLog("info", "Connecting to database...");
+      await prisma.$connect();
+      const duration = Date.now() - start;
+      dbLog("info", `Connected in ${duration}ms`);
+      dbLog("info", "Successfully connected to database", {
+        attempt: connectionAttempts,
+        environment: process.env.NODE_ENV,
+        accelerate: true
+      });
+      isConnecting = false;
+      return true;
+    } catch (error) {
+      dbLog("error", `Database connection failed (attempt ${connectionAttempts})`, {
+        error: error.message,
+        code: error.code,
+        attempt: connectionAttempts,
+        maxAttempts: MAX_CONNECTION_ATTEMPTS
+      });
 
-    if (connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
-      dbLog("info", `Retrying database connection in 2 seconds...`);
-      setTimeout(connectWithRetry, 2000);
-    } else {
-      dbLog("error", "Max connection attempts exceeded. Exiting process.");
-      process.exit(1);
+      if (connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
+        dbLog("info", `Retrying database connection in 2 seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        isConnecting = false;
+        connectionPromise = null;
+        return connectWithRetry();
+      } else {
+        dbLog("error", "Max connection attempts exceeded. Database operations may fail.");
+        isConnecting = false;
+        // Don't exit process in production - let the app continue with degraded functionality
+        if (process.env.NODE_ENV !== "production") {
+          process.exit(1);
+        }
+        return false;
+      }
     }
-  }
+  })();
+  
+  return connectionPromise;
 }
 
 // Initialize connection
-connectWithRetry();
+connectWithRetry().catch(error => {
+  dbLog("error", "Failed to initialize database connection", { error: error.message });
+});
 
 // Graceful shutdown handling
 process.on('beforeExit', async () => {
@@ -171,5 +194,16 @@ process.on('SIGTERM', async () => {
   await prisma.$disconnect();
   process.exit(0);
 });
+
+// Add database health check
+export async function checkDatabaseHealth() {
+  try {
+    await prisma.$queryRaw`SELECT 1 as health_check`;
+    return { healthy: true, message: "Database is healthy" };
+  } catch (error) {
+    dbLog("warn", "Database health check failed", { error: error.message });
+    return { healthy: false, message: error.message };
+  }
+}
 
 export default prisma;

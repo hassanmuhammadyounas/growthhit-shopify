@@ -16,6 +16,7 @@
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
     "db:test": "node -e \"import('./app/db.server.js').then(m => m.default.$queryRaw\\`SELECT 1 as test\\`).then(() => console.log('✅ Database connected')).catch(err => console.error('❌ Error:', err.message))\"",
+    "db:health": "node -e \"import('./app/db.server.js').then(m => m.checkDatabaseHealth()).then(result => console.log(result.healthy ? '✅ Database healthy' : '❌ Database unhealthy:', result.message)).catch(err => console.error('❌ Health check failed:', err.message))\"",
     "migrate": "prisma migrate deploy"
   },
   "type": "module",
