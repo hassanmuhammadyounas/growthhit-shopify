@@ -2,10 +2,37 @@ import "@shopify/shopify-app-remix/adapters/node";
 import {
   ApiVersion,
   AppDistribution,
+  DeliveryMethod,
   shopifyApp,
 } from "@shopify/shopify-app-remix/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
+import { restResources } from "@shopify/shopify-api/rest/admin/2023-04";
 import prisma from "./db.server";
+
+// Validate required environment variables
+const requiredEnvVars = {
+  SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY,
+  SHOPIFY_API_SECRET: process.env.SHOPIFY_API_SECRET,
+  SHOPIFY_APP_URL: process.env.SHOPIFY_APP_URL,
+  SCOPES: process.env.SCOPES
+};
+
+const missingVars = Object.entries(requiredEnvVars)
+  .filter(([key, value]) => !value)
+  .map(([key]) => key);
+
+if (missingVars.length > 0) {
+  console.error("❌ Missing required environment variables:", missingVars);
+  console.log("Current env vars:", {
+    SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY ? "✅ Set" : "❌ Missing",
+    SHOPIFY_API_SECRET: process.env.SHOPIFY_API_SECRET ? "✅ Set" : "❌ Missing", 
+    SHOPIFY_APP_URL: process.env.SHOPIFY_APP_URL || "❌ Missing",
+    SCOPES: process.env.SCOPES || "❌ Missing"
+  });
+} else {
+  console.log("✅ All required environment variables are set");
+  console.log("App URL:", process.env.SHOPIFY_APP_URL);
+}
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -38,11 +65,31 @@ export const sessionStorage = shopify.sessionStorage;
 // Helper that wraps authenticate.admin with timing logs
 export async function authWithLog(request) {
   const t0 = Date.now();
-  const result = await authenticate.admin(request);
-  console.log("[auth] authenticate.admin finished", {
-    ms: Date.now() - t0,
-    path: new URL(request.url).pathname,
-    shop: result?.session?.shop || null,
+  console.log("[auth] Starting authenticate.admin...", { path: new URL(request.url).pathname });
+  
+  // Add timeout to prevent infinite hangs
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('Authentication timeout after 30 seconds')), 30000);
   });
-  return result;
+  
+  try {
+    const result = await Promise.race([
+      authenticate.admin(request),
+      timeoutPromise
+    ]);
+    
+    console.log("[auth] authenticate.admin finished", {
+      ms: Date.now() - t0,
+      path: new URL(request.url).pathname,
+      shop: result?.session?.shop || null,
+    });
+    return result;
+  } catch (error) {
+    console.error("[auth] authenticate.admin failed", {
+      ms: Date.now() - t0,
+      path: new URL(request.url).pathname,
+      error: error.message
+    });
+    throw error;
+  }
 }

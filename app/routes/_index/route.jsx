@@ -1,13 +1,28 @@
 import { redirect } from "@remix-run/node";
 import { Form, useLoaderData } from "@remix-run/react";
-import { login } from "../../shopify.server";
+import { login, authWithLog } from "../../shopify.server";
 import styles from "./styles.module.css";
 
 export const loader = async ({ request }) => {
   const url = new URL(request.url);
+  console.log('[_index] loader called', { url: request.url, searchParams: url.searchParams.toString() });
 
   if (url.searchParams.get("shop")) {
-    throw redirect(`/app?${url.searchParams.toString()}`);
+    console.log('[_index] shop param found, attempting auth...');
+    try {
+      // Try to authenticate first
+      await authWithLog(request);
+      console.log('[_index] auth successful, redirecting to /app');
+      throw redirect(`/app?${url.searchParams.toString()}`);
+    } catch (error) {
+      if (error instanceof Response) {
+        // This is a redirect response from authentication
+        console.log('[_index] auth returned redirect, following it');
+        throw error;
+      }
+      console.error('[_index] auth failed:', error);
+      // If auth fails, still show the form
+    }
   }
 
   return { showForm: Boolean(login) };
