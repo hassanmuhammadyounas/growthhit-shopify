@@ -4,6 +4,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "shopify app dev",
+    "start": "remix-serve build/server/index.js",
     "shopify": "shopify",
     "prisma": "prisma",
     "setup": "prisma generate --no-engine && prisma migrate deploy",
