@@ -31,6 +31,8 @@ if (process.env.NODE_ENV === "production") {
       { emit: 'event', level: 'warn' },
       { emit: 'event', level: 'info' },
     ],
+    // Add query timeout for production
+    datasourceUrl: process.env.DATABASE_URL + "?connection_limit=10&pool_timeout=20",
   }).$extends(withAccelerate());
 
   // Safely attach production event listeners (Accelerate client may not support $on)
@@ -48,6 +50,17 @@ if (process.env.NODE_ENV === "production") {
         target: e.target,
         message: e.message
       });
+    });
+
+    // Log slow queries in production
+    prisma.$on('query', (e) => {
+      if (e.duration > 2000) {
+        dbLog("warn", "Slow query in production", {
+          query: e.query,
+          duration: `${e.duration}ms`,
+          target: e.target
+        });
+      }
     });
   } else {
     dbLog("warn", "Prisma Accelerate client does not support $on event listeners – skipping error/warn handlers");

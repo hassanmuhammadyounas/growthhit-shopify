@@ -29,13 +29,8 @@ export const loader = async ({ request }) => {
       timestamp: new Date().toISOString()
     });
 
-    // Add timeout protection for authentication
-    const authResult = await Promise.race([
-      authWithLog(request),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Auth timeout after 45 seconds')), 45000)
-      )
-    ]);
+    // Remove timeout wrapper - let Shopify handle its own timeouts
+    const authResult = await authWithLog(request);
 
     const { session } = authResult;
     shop = session.shop;
