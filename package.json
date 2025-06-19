@@ -2,7 +2,7 @@
   "name": "growthhit",
   "private": true,
   "scripts": {
-    "build": "remix build --sourcemap",
+    "build": "vite build",
     "dev": "shopify app dev",
     "shopify": "shopify",
     "prisma": "prisma",
