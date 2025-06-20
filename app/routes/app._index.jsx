@@ -22,14 +22,11 @@ export const loader = async ({ request }) => {
 
     await logger.info("App index loaded", { requestId, shop, userAgent: request.headers.get("user-agent") }, request, shop);
 
-    // **Determine the correct token to use**
+    // Try to load previously-stored offline token directly from DB (no network request)
     let offlineToken = session.accessToken;
-    if (session.isOnline) {
-      // If an online (session) token is present, retrieve the offline token for the shop
-      const { session: offlineSession } = await unauthenticated.admin(session.shop);
-      if (offlineSession?.accessToken) {
-        offlineToken = offlineSession.accessToken;
-      }
+    const offlineRec = await prisma.session.findFirst({ where: { shop: session.shop, isOnline: false } });
+    if (offlineRec?.accessToken) {
+      offlineToken = offlineRec.accessToken;
     }
 
     /* ------------------------------------------------------------------
@@ -70,6 +67,7 @@ export const loader = async ({ request }) => {
       // 🔒 **Removed** accessToken from response for security
       connectionStatus: status,
       connectionData: connectionPayload,
+      apiKey: process.env.SHOPIFY_API_KEY,
     });
   } catch (error) {
     await logger.error("Failed to load app index", { requestId, shop, error: error.message, stack: error.stack }, request, shop);
@@ -101,13 +99,11 @@ export const action = async ({ request }) => {
         });
         await logger.database("upsert", "AirbyteConnection", shop, { requestId, status: "connecting" });
 
-        // **Determine the correct token to use**
+        // Load offline token from DB (assumed to be created via /api/exchange-token)
         let offlineToken = session.accessToken;
-        if (session.isOnline) {
-          const { session: offlineSession } = await unauthenticated.admin(session.shop);
-          if (offlineSession?.accessToken) {
-            offlineToken = offlineSession.accessToken;
-          }
+        const offlineRec = await prisma.session.findFirst({ where: { shop: session.shop, isOnline: false } });
+        if (offlineRec?.accessToken) {
+          offlineToken = offlineRec.accessToken;
         }
 
         console.log("[CONNECT] Calling Airbyte Handler API", { requestId, shop, endpoint: AIRBYTE_URL });
@@ -189,8 +185,39 @@ export const action = async ({ request }) => {
 };
 
 export default function Index() {
-  const { shop, connectionStatus: dbConnectionStatus, connectionData } = useLoaderData();  {/* 🔒 Removed accessToken from loader data */}
+  const { shop, connectionStatus: dbConnectionStatus, connectionData, apiKey } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
-  // ... (UI rendering logic unchanged) ...
+
+  // Connect button handler (client-side only)
+  const handleConnect = async (e) => {
+    e.preventDefault();
+    if (typeof window === "undefined") return;
+    const [{ default: createApp }, { getSessionToken }] = await Promise.all([
+      import("@shopify/app-bridge"),
+      import("@shopify/app-bridge/utilities"),
+    ]);
+    const app = createApp({
+      apiKey,
+      host: new URLSearchParams(window.location.search).get("host"),
+    });
+    const sessionToken = await getSessionToken(app);
+    await fetch("/api/exchange-token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionToken, shop }),
+    });
+    // After token stored, submit the hidden connect form
+    document.getElementById("connectForm").submit();
+  };
+
+  return (
+    <Page>
+      {/* existing UI ... */}
+      <Form method="post" id="connectForm">
+        <input type="hidden" name="action" value="connect" />
+        <Button primary onClick={handleConnect}>Connect</Button>
+      </Form>
+    </Page>
+  );
 }

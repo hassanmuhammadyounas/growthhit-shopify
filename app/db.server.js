@@ -20,6 +20,11 @@ const dbLog = (level, message, context = {}) => {
   );
 };
 
+const rawDbUrl = process.env.DATABASE_URL;
+if (rawDbUrl && !rawDbUrl.includes("connection_limit")) {
+  process.env.DATABASE_URL = `${rawDbUrl}${rawDbUrl.includes("?") ? "&" : "?"}connection_limit=1&pool_timeout=20`;
+}
+
 if (process.env.NODE_ENV === "production") {
   dbLog("info", "Initializing Prisma Client for production");
   
