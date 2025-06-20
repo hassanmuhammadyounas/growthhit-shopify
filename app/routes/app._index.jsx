@@ -204,8 +204,8 @@ export default function Index() {
     e.preventDefault();
     if (typeof window === "undefined") return;
     const [{ default: createApp }, { getSessionToken }] = await Promise.all([
-      import("@shopify/app-bridge"),
-      import("@shopify/app-bridge/utilities"),
+      import(/* @vite-ignore */ "@shopify/app-bridge"),
+      import(/* @vite-ignore */ "@shopify/app-bridge/utilities"),
     ]);
     const app = createApp({
       apiKey,
