@@ -47,17 +47,22 @@ const shopify = shopifyApp({
   sessionStorage: new PrismaSessionStorage(prisma),
   isEmbeddedApp: true,
   distribution: AppDistribution.AppStore,
+  // CRITICAL: Only use online tokens during authentication
   useOnlineTokens: true,
   logger: { level: LogSeverity.Debug },
   future: {
-    // Enable the new embedded auth strategy for token exchange
+    // Enable the new embedded auth strategy for token exchange - NO offline tokens on auth
     unstable_newEmbeddedAuthStrategy: true,
     removeRest: true,
   },
-  // Explicitly configure auth behavior to prefer online tokens
+  // Explicitly configure to only create online sessions during auth
   auth: {
     scopes: process.env.SCOPES?.split(","),
     callbackPath: "/auth/callback",
+    // Force online tokens only during regular authentication
+    options: {
+      access_type: "online"
+    }
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
@@ -73,25 +78,34 @@ export const login = shopify.login;
 export const registerWebhooks = shopify.registerWebhooks;
 export const sessionStorage = shopify.sessionStorage;
 
-// Helper around authenticate.admin with lightweight logging (no custom timeout)
+// Helper around authenticate.admin with lightweight logging - ONLINE TOKENS ONLY
 export async function authWithLog(request) {
   const t0 = Date.now();
   const url = new URL(request.url);
   try {
+    // Use authenticate.admin with explicit online token configuration
     const result = await authenticate.admin(request);
     console.log("[auth] authenticate.admin finished", {
       path: url.pathname,
       shop: result?.session?.shop,
+      isOnline: result?.session?.isOnline || "unknown",
       ms: Date.now() - t0,
     });
-    // Extra diagnostic: did we actually get an access token from Shopify?
+    
+    // Verify we're only getting online tokens during regular auth
     if (result?.session) {
       console.log("[auth] session details", {
         shop: result.session.shop,
         isOnline: result.session.isOnline,
         accessTokenPresent: Boolean(result.session.accessToken),
         scope: result.session.scope,
+        tokenType: result.session.isOnline ? "ONLINE" : "OFFLINE",
       });
+      
+      // Log warning if we unexpectedly get offline tokens during regular auth
+      if (!result.session.isOnline) {
+        console.warn("[auth] ⚠️  Unexpected offline token during regular authentication - this should only happen via Connect button");
+      }
     } else {
       console.log("[auth] session details", { missing: true });
     }
