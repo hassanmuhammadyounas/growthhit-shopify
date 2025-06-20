@@ -50,7 +50,8 @@ const shopify = shopifyApp({
   useOnlineTokens: true,
   logger: { level: LogSeverity.Debug },
   future: {
-    // Removed unstable_newEmbeddedAuthStrategy to prevent automatic offline token requests
+    // Enable the new embedded auth strategy for token exchange
+    unstable_newEmbeddedAuthStrategy: true,
     removeRest: true,
   },
   // Explicitly configure auth behavior to prefer online tokens

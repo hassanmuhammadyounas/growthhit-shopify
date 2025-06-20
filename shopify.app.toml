@@ -14,10 +14,6 @@ include_config_on_deploy = true
 scopes = "read_orders,read_products"
 use_legacy_install_flow = false
 
-[access.admin]
-direct_api_mode = "offline"
-embedded_app_direct_api_access = true
-
 [auth]
 redirect_urls = [
   "https://app.growthhit.com/auth/callback",
