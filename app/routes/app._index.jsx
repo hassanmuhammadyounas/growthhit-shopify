@@ -6,11 +6,15 @@ import { useLoaderData, useActionData, useNavigation, Form } from "@remix-run/re
 import {
   Page, Card, Text, Button, Banner, Spinner, Badge, Layout, Box, Divider
 } from "@shopify/polaris";
-import { authWithLog, unauthenticated } from "../shopify.server"; // ✅ Import unauthenticated helper
-import prisma from "../db.server";
-import { logger, airbyteLogger, Logger } from "../utils/logger.server";
+// Server-only modules must be imported dynamically inside loaders/actions so they don't end up in the client bundle
 
 export const loader = async ({ request }) => {
+  const [{ Logger, logger, airbyteLogger }] = await Promise.all([
+    import("../utils/logger.server")
+  ]);
+  const { authWithLog, unauthenticated } = await import("../shopify.server");
+  const prisma = (await import("../db.server")).default;
+
   const startTime = Date.now();
   const requestId = Logger.generateRequestId();
   let shop = null;
@@ -76,6 +80,12 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
+  const [{ Logger, logger, airbyteLogger }] = await Promise.all([
+    import("../utils/logger.server")
+  ]);
+  const { authWithLog, unauthenticated } = await import("../shopify.server");
+  const prisma = (await import("../db.server")).default;
+
   const startTime = Date.now();
   const requestId = Logger.generateRequestId();
   let shop = null;
