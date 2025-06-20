@@ -50,8 +50,13 @@ const shopify = shopifyApp({
   useOnlineTokens: true,
   logger: { level: LogSeverity.Debug },
   future: {
-    unstable_newEmbeddedAuthStrategy: true,
+    // Removed unstable_newEmbeddedAuthStrategy to prevent automatic offline token requests
     removeRest: true,
+  },
+  // Explicitly configure auth behavior to prefer online tokens
+  auth: {
+    scopes: process.env.SCOPES?.split(","),
+    callbackPath: "/auth/callback",
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }

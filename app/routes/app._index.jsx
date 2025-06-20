@@ -8,6 +8,9 @@ import {
 } from "@shopify/polaris";
 // Server-only modules must be imported dynamically inside loaders/actions so they don't end up in the client bundle
 
+// Airbyte API endpoint
+const AIRBYTE_URL = process.env.AIRBYTE_API_URL || "https://your-airbyte-handler.com/api";
+
 export const loader = async ({ request }) => {
   const [{ Logger, logger, airbyteLogger }] = await Promise.all([
     import("../utils/logger.server")
@@ -26,12 +29,8 @@ export const loader = async ({ request }) => {
 
     await logger.info("App index loaded", { requestId, shop, userAgent: request.headers.get("user-agent") }, request, shop);
 
-    // Try to load previously-stored offline token directly from DB (no network request)
-    let offlineToken = session.accessToken;
-    const offlineRec = await prisma.session.findFirst({ where: { shop: session.shop, isOnline: false } });
-    if (offlineRec?.accessToken) {
-      offlineToken = offlineRec.accessToken;
-    }
+    // Use online session token for page loads - offline tokens only used when explicitly connecting
+    const accessToken = session.accessToken;
 
     /* ------------------------------------------------------------------
        Call the Airbyte handler to determine current connection status   
@@ -44,13 +43,13 @@ export const loader = async ({ request }) => {
     let fetchError;
     const apiStart = Date.now();
     try {
-      // ✅ Use offlineToken instead of session.accessToken
+      // Use online token for status checks - only use offline tokens for actual connections
       airbyteResp = await fetch(AIRBYTE_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           shop: session.shop,
-          api_password: offlineToken,    // <-- offline API token for the store
+          api_password: accessToken,    // <-- using online token for status checks
         }),
       });
       console.log("[STATUS_CHECK] Response received", { requestId, shop: session.shop, status: airbyteResp.status, ok: airbyteResp.ok, duration: Date.now() - apiStart });
@@ -61,14 +60,43 @@ export const loader = async ({ request }) => {
       await logger.error("Airbyte status check fetch failed", { requestId, shop: session.shop, error: error.message, stack: error.stack, duration: Date.now() - apiStart });
     }
 
-    // ... (process response JSON into `status` and `connectionPayload` as before) ...
+    // Process response JSON into status and connectionPayload
+    let status = "disconnected";
+    let connectionPayload = null;
+    
+    if (airbyteResp && airbyteResp.ok) {
+      try {
+        const responseData = await airbyteResp.json();
+        status = responseData.status || "connected";
+        connectionPayload = responseData;
+      } catch (error) {
+        console.error("[STATUS_CHECK] Failed to parse response JSON", { requestId, shop: session.shop, error: error.message });
+        await logger.error("Failed to parse Airbyte response JSON", { requestId, shop: session.shop, error: error.message });
+      }
+    } else if (fetchError) {
+      status = "failed";
+    }
 
-    // Persist status to DB (upsert AirbyteConnection) ...
-    // Log page load metrics ...
+    // Persist status to DB (upsert AirbyteConnection)
+    await prisma.airbyteConnection.upsert({
+      where: { shop: session.shop },
+      update: { 
+        status,
+        errorMessage: fetchError?.message || null,
+        updatedAt: new Date()
+      },
+      create: { 
+        shop: session.shop, 
+        status,
+        errorMessage: fetchError?.message || null
+      }
+    });
+
+    // Log page load metrics
+    await logger.metric("page_loads", 1, shop, { requestId, duration: Date.now() - startTime });
 
     return json({
       shop: session.shop,
-      // 🔒 **Removed** accessToken from response for security
       connectionStatus: status,
       connectionData: connectionPayload,
       apiKey: process.env.SHOPIFY_API_KEY,
@@ -109,23 +137,31 @@ export const action = async ({ request }) => {
         });
         await logger.database("upsert", "AirbyteConnection", shop, { requestId, status: "connecting" });
 
-        // Load offline token from DB (assumed to be created via /api/exchange-token)
-        let offlineToken = session.accessToken;
-        const offlineRec = await prisma.session.findFirst({ where: { shop: session.shop, isOnline: false } });
-        if (offlineRec?.accessToken) {
-          offlineToken = offlineRec.accessToken;
+        // Load offline token from DB - must exist from previous /api/exchange-token call
+        const offlineRec = await prisma.session.findFirst({ 
+          where: { shop: session.shop, isOnline: false } 
+        });
+        
+        if (!offlineRec?.accessToken) {
+          // No offline token found - user must click Connect button first
+          return json({ 
+            success: false, 
+            message: "Offline access token not found. Please use the Connect button to authorize background access." 
+          });
         }
+
+        const offlineToken = offlineRec.accessToken;
 
         console.log("[CONNECT] Calling Airbyte Handler API", { requestId, shop, endpoint: AIRBYTE_URL });
         await airbyteLogger.info("Calling Airbyte Handler API", { requestId, shop, endpoint: AIRBYTE_URL });
         const apiStartTime = Date.now();
-        // ✅ Use offlineToken for the connect request
+        // Use offline token for the connection request (long-lived background access)
         const response = await fetch(AIRBYTE_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             shop: session.shop,
-            api_password: offlineToken,   // <-- offline API token used here
+            api_password: offlineToken,   // <-- offline API token for background operations
           }),
         });
         const apiDuration = Date.now() - apiStartTime;
@@ -203,22 +239,42 @@ export default function Index() {
   const handleConnect = async (e) => {
     e.preventDefault();
     if (typeof window === "undefined") return;
-    const [{ default: createApp }, { getSessionToken }] = await Promise.all([
-      import(/* @vite-ignore */ "@shopify/app-bridge"),
-      import(/* @vite-ignore */ "@shopify/app-bridge/utilities"),
-    ]);
-    const app = createApp({
-      apiKey,
-      host: new URLSearchParams(window.location.search).get("host"),
-    });
-    const sessionToken = await getSessionToken(app);
-    await fetch("/api/exchange-token", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionToken, shop }),
-    });
-    // After token stored, submit the hidden connect form
-    document.getElementById("connectForm").submit();
+    
+    try {
+      const [{ default: createApp }, { getSessionToken }] = await Promise.all([
+        import(/* @vite-ignore */ "@shopify/app-bridge"),
+        import(/* @vite-ignore */ "@shopify/app-bridge/utilities"),
+      ]);
+      
+      const app = createApp({
+        apiKey,
+        host: new URLSearchParams(window.location.search).get("host"),
+      });
+      
+      const sessionToken = await getSessionToken(app);
+      
+      // Exchange session token for offline access token
+      const response = await fetch("/api/exchange-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionToken, shop }),
+      });
+      
+      const result = await response.json();
+      if (!result.ok) {
+        console.error("Failed to get offline access token:", result.message);
+        // You might want to show user-friendly error here
+        return;
+      }
+      
+      console.log("Successfully obtained offline access token");
+      
+      // After token stored successfully, submit the hidden connect form
+      document.getElementById("connectForm").submit();
+    } catch (error) {
+      console.error("Error in handleConnect:", error);
+      // You might want to show user-friendly error here
+    }
   };
 
   return (
