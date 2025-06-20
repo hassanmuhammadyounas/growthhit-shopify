@@ -78,6 +78,17 @@ export async function authWithLog(request) {
       shop: result?.session?.shop,
       ms: Date.now() - t0,
     });
+    // Extra diagnostic: did we actually get an access token from Shopify?
+    if (result?.session) {
+      console.log("[auth] session details", {
+        shop: result.session.shop,
+        isOnline: result.session.isOnline,
+        accessTokenPresent: Boolean(result.session.accessToken),
+        scope: result.session.scope,
+      });
+    } else {
+      console.log("[auth] session details", { missing: true });
+    }
     return result;
   } catch (error) {
     console.error("[auth] authenticate.admin failed", {
