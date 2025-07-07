@@ -2,7 +2,7 @@
   "name": "growthhit",
   "private": true,
   "scripts": {
-    "build": "prisma migrate deploy && prisma generate && remix vite:build",
+    "build": "prisma db push --accept-data-loss && prisma generate && remix vite:build",
     "dev": "shopify app dev",
     "config:link": "shopify app config link",
     "generate": "shopify app generate",
