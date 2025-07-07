@@ -1,0 +1,32 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "ed8efedf8aaff5c49d2214f5b558d72a"
+name = "growthhit"
+handle = "growthhit"
+application_url = "https://offering-composed-amsterdam-performance.trycloudflare.com"
+embedded = true
+
+[build]
+include_config_on_deploy = true
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2025-07"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "write_products"
+
+[auth]
+redirect_urls = ["https://offering-composed-amsterdam-performance.trycloudflare.com/auth/callback", "https://offering-composed-amsterdam-performance.trycloudflare.com/auth/shopify/callback", "https://offering-composed-amsterdam-performance.trycloudflare.com/api/auth/callback"]
+
+[pos]
+embedded = false
