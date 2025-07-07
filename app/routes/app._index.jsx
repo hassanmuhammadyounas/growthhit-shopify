@@ -32,7 +32,6 @@ export const loader = async ({ request }) => {
     console.log("Database Connection Error:", err.message);
   }
 
-  // Check if shop is already connected
   let isConnected = false;
   let connectionData = null;
   
