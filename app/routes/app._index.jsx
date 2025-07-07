@@ -140,6 +140,7 @@ export default function Index() {
   const apiResponse = fetcher.data;
 
   // Browser console logs (safe information only)
+  // Updated: Now using PostgreSQL with Prisma for better performance
   useEffect(() => {
     console.log("🔗 Connection Status:", { isConnected });
     console.log("📊 Connection Data Available:", !!connectionData);
