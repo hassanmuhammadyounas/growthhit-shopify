@@ -1,9 +1,9 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "ed8efedf8aaff5c49d2214f5b558d72a"
-name = "growthhit"
+name = "Growthhit"
 handle = "growthhit"
-application_url = "https://offering-composed-amsterdam-performance.trycloudflare.com"
+application_url = "https://app.growthhit.com"
 embedded = true
 
 [build]
@@ -23,10 +23,10 @@ api_version = "2025-07"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products"
+scopes = "read_customer_events,read_orders,read_products,write_pixels"
 
 [auth]
-redirect_urls = ["https://offering-composed-amsterdam-performance.trycloudflare.com/auth/callback", "https://offering-composed-amsterdam-performance.trycloudflare.com/auth/shopify/callback", "https://offering-composed-amsterdam-performance.trycloudflare.com/api/auth/callback"]
+redirect_urls = ["https://app.growthhit.com/auth/callback", "https://app.growthhit.com/auth/shopify/callback", "https://app.growthhit.com/api/auth/callback"]
 
 [pos]
 embedded = false
