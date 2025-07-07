@@ -14,31 +14,22 @@ import {
 import { DatabaseConnectIcon } from "@shopify/polaris-icons";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
-import { supabase } from "../supabase.server";
+import prisma from "../db.server";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
 
-  // Test Supabase connection
-  let supabaseStatus = "disconnected";
-  let supabaseError = null;
+  // Test database connection
+  let dbStatus = "disconnected";
+  let dbError = null;
   
   try {
-    const { data, error } = await supabase
-      .from('connections')
-      .select('count')
-      .limit(1);
-    
-    if (error) {
-      supabaseError = error.message;
-      console.log("Supabase Error:", error.message);
-    } else {
-      supabaseStatus = "connected";
-      console.log("Supabase Status:", supabaseStatus);
-    }
+    await prisma.session.count();
+    dbStatus = "connected";
+    console.log("Database Status:", dbStatus);
   } catch (err) {
-    supabaseError = err.message;
-    console.log("Supabase Connection Error:", err.message);
+    dbError = err.message;
+    console.log("Database Connection Error:", err.message);
   }
 
   // Check if shop is already connected
@@ -46,19 +37,16 @@ export const loader = async ({ request }) => {
   let connectionData = null;
   
   try {
-    const { data, error } = await supabase
-      .from('connections')
-      .select('*')
-      .eq('shop', session.shop)
-      .single();
+    const data = await prisma.connections.findUnique({
+      where: { shop: session.shop }
+    });
     
-    if (data && !error) {
+    if (data) {
       isConnected = true;
       connectionData = data;
       console.log("Shop Connection Status:", { isConnected, shop: session.shop });
     }
   } catch (err) {
-    // Shop not found in DB, which is fine
     console.log("Shop not found in DB:", session.shop);
   }
 
@@ -88,38 +76,47 @@ export const action = async ({ request }) => {
     console.log("Airbyte API Response:", responseData);
     
     if (response.ok && responseData.status === "success") {
-      // Save to database
-      const { error } = await supabase
-        .from('connections')
-        .upsert({
-          shop: session.shop,
-          access_token: session.accessToken,
-          source_id: responseData.details.source_id,
-          destination_id: responseData.details.destination_id,
-          connection_id: responseData.details.connection_id,
-          job_id: responseData.details.job_id,
-          request_id: responseData.request_id,
-          source_created_at: new Date().toISOString(),
-          destination_created_at: new Date().toISOString(),
-          connection_created_at: new Date().toISOString(),
-          job_created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+      // Save to database using Prisma
+      try {
+        await prisma.connections.upsert({
+          where: { shop: session.shop },
+          update: {
+            access_token: session.accessToken,
+            source_id: responseData.details.source_id,
+            destination_id: responseData.details.destination_id,
+            connection_id: responseData.details.connection_id,
+            job_id: responseData.details.job_id,
+            request_id: responseData.request_id,
+            updated_at: new Date(),
+          },
+          create: {
+            shop: session.shop,
+            access_token: session.accessToken,
+            source_id: responseData.details.source_id,
+            destination_id: responseData.details.destination_id,
+            connection_id: responseData.details.connection_id,
+            job_id: responseData.details.job_id,
+            request_id: responseData.request_id,
+            source_created_at: new Date(),
+            destination_created_at: new Date(),
+            connection_created_at: new Date(),
+            job_created_at: new Date(),
+          },
         });
-      
-      if (error) {
-        console.log("Database Save Error:", error.message);
+        
+        console.log("Successfully saved to database for shop:", session.shop);
+        return json({
+          success: true,
+          message: "Successfully connected to GrowthHit Dashboard!",
+          saved: true,
+        });
+      } catch (dbError) {
+        console.log("Database Save Error:", dbError.message);
         return json({
           success: false,
-          error: `Database error: ${error.message}`,
+          error: `Database error: ${dbError.message}`,
         });
       }
-      
-      console.log("Successfully saved to database for shop:", session.shop);
-      return json({
-        success: true,
-        message: "Successfully connected to GrowthHit Dashboard!",
-        saved: true,
-      });
     }
     
     return json({
