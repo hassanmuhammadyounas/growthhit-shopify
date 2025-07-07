@@ -75,7 +75,7 @@ export const action = async ({ request }) => {
     console.log("Airbyte API Response:", responseData);
     
     if (response.ok && responseData.status === "success") {
-      // Save to database using Prisma
+      // Save to DB using Prisma
       try {
         await prisma.connections.upsert({
           where: { shop: session.shop },
